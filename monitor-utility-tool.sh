@@ -34,7 +34,7 @@ print_centered_in_box() {
 
 print_header() {
     clear
-    print_centered_in_box "Server Admin Utility Tool"
+    print_centered_in_box "Simple Monitoring Utility Tool"
     echo
 }
 
