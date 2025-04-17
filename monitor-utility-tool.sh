@@ -353,10 +353,7 @@ while true; do
     done
 done
 
-# Ensure keyword file has correct permissions
 if [ -r "$keyword_file" ]; then
     chmod 600 "$keyword_file"
 fi
-
-# Use mktemp for temporary files if needed
 temp_file=$(mktemp)
