@@ -1,6 +1,5 @@
 #!/bin/bash
-# Arief Project 
-# Monitoring Utility Tool Ver.0.01.beta
+# Arief Project monitoring
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -13,14 +12,12 @@ UNDERLINE='\033[4m'
 HEADER_BG='\033[44m'
 FOOTER_BG='\033[45m'
 
-
+# Enable safer script execution
 set -o errexit
 set -o pipefail
 set -o nounset
 
-
 trap 'echo "Exiting..."; exit 1' SIGINT SIGTERM
-
 
 print_centered_in_box() {
     local text="$1"
@@ -47,27 +44,33 @@ print_footer() {
     echo
 }
 
-
+# Function to find files larger than 1GB, sorted by user then size (desc)
 find_large_files() {
     print_header
     echo -e "${YELLOW}Mencari file backup atau lainnya dengan ukuran > 1GB at /home/*...${NC}"
     echo -e "${YELLOW}Mohon menunggu...${NC}"
     echo "-----------------------------------------"
     local results
-    
+    # Use find, du, sort. nice/ionice added for lower priority execution.
     results=$(nice ionice -c 3 find /home/* -path '/home/*/mail' -prune -o -type f -size +1G -exec du -sh {} + 2>/dev/null | nice ionice -c 3 sort -k2,2 -k1,1hr)
     if [ -z "$results" ]; then
-        echo "Tidak ditemukan berkas yang lebih besar dari 1GB."
+        echo "No files found larger than 1GB."
     else
-        echo "$results"
+        echo -e "${RED}Ukuran (GB) | Direktori/File${NC}"
+        echo "-----------------------------------------"
+        echo "$results" | while read -r line; do
+            size=$(echo "$line" | awk '{print $1}')
+            path=$(echo "$line" | awk '{$1=""; print $0}' | sed 's/^ *//')
+            printf "%-10s | %s\n" "$size" "$path"
+        done
     fi
     echo "-----------------------------------------"
     echo -e "${GREEN}Search complete.${NC}"
     print_footer
-    read -p "Tekan Enter untuk kembali ke menu..."
+    read -p "Press Enter to return to the menu..."
 }
 
-
+# Function to list email directories (/home/*/mail), sorted by user then size (desc)
 check_email_usage() {
     print_header
     echo -e "${YELLOW}Listing disk usage for each email directory (/home/*/mail)...${NC}"
@@ -76,9 +79,9 @@ check_email_usage() {
     printf "%-15s | %s\n" "Size (GB)" "Directory"
     echo "----------------|--------------------------------------------"
 
-    local threshold=10737418240
+    local threshold=10737418240 # 10 GiB
 
-
+    # Use find, du, sort, awk. nice/ionice added.
     nice ionice -c 3 find /home/* -maxdepth 1 -type d -name 'mail' -exec du -sb {} + 2>/dev/null | \
     nice ionice -c 3 sort -k2,2 -k1,1nr | \
     awk -v threshold="$threshold" '
@@ -94,7 +97,7 @@ check_email_usage() {
         }
         found=1;
     }
-    END { exit !found }' 
+    END { exit !found }'
 
     if [ $? -ne 0 ]; then
         echo "No /home/*/mail directories found."
@@ -106,21 +109,22 @@ check_email_usage() {
     read -p "Press Enter to return to the menu..."
 }
 
-
+# Function to search for judi scripts using local keyword file
 find_judi_scripts() {
     print_header
-    local keyword_file="/etc/judaylist.txt" 
+    local keyword_file="/etc/judaylist.txt" # Path direktori keyword judi
 
-    echo -e "${YELLOW}Mencari potensial script judi sesuai keyword yang ada $keyword_file...${NC}"
+    echo -e "${YELLOW}Searching for potential gambling scripts based on keywords in $keyword_file...${NC}"
 
- 
+    # Check if keyword file exists and is readable
     if [ ! -r "$keyword_file" ]; then
         echo -e "${RED}Error: Keyword file '$keyword_file' not found or not readable.${NC}"
         echo -e "${RED}Please ensure the file exists and has the correct permissions.${NC}"
         sleep 3
-        return 1 
+        return 1
     fi
-    
+
+    # Check if keyword file is empty
     if [ ! -s "$keyword_file" ]; then
         echo -e "${RED}Warning: Keyword file '$keyword_file' is empty.${NC}"
         echo -e "${RED}No keywords to search for. Aborting search.${NC}"
@@ -128,10 +132,13 @@ find_judi_scripts() {
         return 1
     fi
 
+    echo -e "${YELLOW}Included files: index.*${NC}"
+    echo -e "${YELLOW}Excluded Dirs: cache, tmp, spamcleaner, Scroller, checkout, .cache, .local, .npm, .node-gyp, node_modules${NC}"
+    echo -e "${YELLOW}Excluded Exts: js, map, tpl, ts, log, bak, old, swp, zip, tar, gz, bz2, xz, 7z, rar${NC}"
     echo "-----------------------------------------"
 
     local results
-    
+    # Run grep using the local keyword file. nice/ionice added.
     results=$(nice ionice -c 3 grep -ilr \
         --include='index.*' \
         -f "$keyword_file" \
@@ -140,9 +147,10 @@ find_judi_scripts() {
         /home/* 2>/dev/null)
 
     if [ -z "$results" ]; then
-        echo "Tidak ditemukan keyword judi pada script user"
+        echo "No potential judi script files found matching the criteria."
     else
-        echo -e "${RED}Keyword perjudian di temukan pada :${NC}"
+        echo -e "${RED}Potential judi script files found:${NC}"
+        # Sort the grep results alphabetically by path
         echo "$results" | sort
     fi
 
@@ -153,13 +161,14 @@ find_judi_scripts() {
     read -p "Press Enter to return to the menu..."
 }
 
+# Function to find and optionally delete files of size 0 Kb
 find_zero_size_files() {
     print_header
     echo -e "${YELLOW}Mencari file dengan ukuran 0 Kb di /home/*...${NC}"
     echo -e "${YELLOW}Mohon menunggu...${NC}"
     echo "-----------------------------------------"
     local results
-
+    # Use find to locate files of size 0 Kb
     results=$(find /home/* -type f -size 0 2>/dev/null)
     if [ -z "$results" ]; then
         echo "Tidak ada file dengan ukuran 0 Kb ditemukan."
@@ -181,7 +190,7 @@ find_zero_size_files() {
     read -p "Tekan Enter untuk kembali ke menu..."
 }
 
-
+# Function to validate user input
 validate_input() {
     if ! [[ "$1" =~ ^[0-9]+$ ]]; then
         echo -e "${RED}Invalid input. Please enter a number.${NC}"
@@ -344,8 +353,10 @@ while true; do
     done
 done
 
+# Ensure keyword file has correct permissions
 if [ -r "$keyword_file" ]; then
     chmod 600 "$keyword_file"
 fi
 
+# Use mktemp for temporary files if needed
 temp_file=$(mktemp)
