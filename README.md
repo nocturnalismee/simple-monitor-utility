@@ -1,4 +1,4 @@
-# Simple Monitoring Utility Tool
+# 💻 Simple Monitoring Utility Tool 💻
 
 Script bash ini adalah tool simple untuk memantau dan mengelola server dengan berbagai fitur seperti audit disk, audit judol, dan mitigasi DDoS.
 
@@ -28,4 +28,4 @@ Script bash ini adalah tool simple untuk memantau dan mengelola server dengan be
 Silakan buat pull request untuk perbaikan atau fitur baru.
 
 ## Informasi lainnya
-Perlu diingat script bash ini masih beta dan akan terus dicoba lakukan pengembangan dan penambahan tool. 😊
+❗Perlu diingat script bash ini masih beta dan akan terus dicoba lakukan pengembangan dan penambahan tool. 😊
