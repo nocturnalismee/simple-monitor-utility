@@ -1,24 +1,28 @@
 #!/bin/bash
 # Arief Project monitoring
 
+# Opsi Warna Bash
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# Define additional color codes for theming
 BOLD='\033[1m'
 UNDERLINE='\033[4m'
 HEADER_BG='\033[44m'
 FOOTER_BG='\033[45m'
 
 # Enable safer script execution
-set -o errexit
-set -o pipefail
-set -o nounset
+set -o errexit  # Exit immediately if a command exits with a non-zero status.
+set -o pipefail # Return value of a pipeline is the status of the last command to exit with non-zero status
+set -o nounset  # Treat unset variables as an error
 
+# Trap to handle cleanup on exit
 trap 'echo "Exiting..."; exit 1' SIGINT SIGTERM
 
+# Function to display text centered in a box
 print_centered_in_box() {
     local text="$1"
     local terminal_width=$(tput cols)
@@ -31,14 +35,14 @@ print_centered_in_box() {
     echo -e "$border"
 }
 
-
+# Function to display a themed header
 print_header() {
     clear
-    print_centered_in_box "Simple Monitoring Utility Tool"
+    print_centered_in_box "Server Admin Utility Tool"
     echo
 }
 
-
+# Function to display a themed footer
 print_footer() {
     print_centered_in_box "Selesai"
     echo
@@ -97,7 +101,7 @@ check_email_usage() {
         }
         found=1;
     }
-    END { exit !found }'
+    END { exit !found }' # Exit with 0 if found, 1 otherwise
 
     if [ $? -ne 0 ]; then
         echo "No /home/*/mail directories found."
@@ -121,7 +125,7 @@ find_judi_scripts() {
         echo -e "${RED}Error: Keyword file '$keyword_file' not found or not readable.${NC}"
         echo -e "${RED}Please ensure the file exists and has the correct permissions.${NC}"
         sleep 3
-        return 1
+        return 1 # Return non-zero status
     fi
 
     # Check if keyword file is empty
@@ -129,7 +133,7 @@ find_judi_scripts() {
         echo -e "${RED}Warning: Keyword file '$keyword_file' is empty.${NC}"
         echo -e "${RED}No keywords to search for. Aborting search.${NC}"
         sleep 2
-        return 1
+        return 1 # Return non-zero status
     fi
 
     echo -e "${YELLOW}Included files: index.*${NC}"
@@ -174,8 +178,13 @@ find_zero_size_files() {
         echo "Tidak ada file dengan ukuran 0 Kb ditemukan."
     else
         echo -e "${RED}File dengan ukuran 0 Kb ditemukan:${NC}"
-        echo "$results"
-        echo "-----------------------------------------"
+        echo "Ukuran | File"
+        echo "-------------------------"
+        echo "$results" | while read -r file; do
+            size=$(du -sh "$file" | awk '{print $1}')
+            printf "%-7s | %s\n" "$size" "$file"
+        done
+        echo "-------------------------"
         read -p "Apakah Anda ingin menghapus file-file ini? (y/n): " choice
         if [[ "$choice" == "y" || "$choice" == "Y" ]]; then
             echo "$results" | xargs rm -f
@@ -353,7 +362,10 @@ while true; do
     done
 done
 
+# Ensure keyword file has correct permissions
 if [ -r "$keyword_file" ]; then
     chmod 600 "$keyword_file"
 fi
+
+# Use mktemp for temporary files if needed
 temp_file=$(mktemp)
