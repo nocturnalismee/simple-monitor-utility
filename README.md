@@ -5,7 +5,7 @@ Script bash ini adalah tool simple untuk memantau dan mengelola server dengan be
 ## Fitur
 
 - **Audit Disk**: Memeriksa file backup/arsip yang lebih besar dari 1GB, Audit penggunaan disk untuk direktori mail, dan menghapus file berukuran 0 Kb untuk direktory home user.
-- **Audit Judol**: Mencari script judi berdasarkan file keyword lokal. Keyword bisa anda namai dan buat di `/etc/judaylist`
+- **Audit Judol**: Mencari script judi berdasarkan file keyword lokal. Keyword bisa anda namai dan buat di `/etc/judaylist.txt`
 - **Mitigasi DDoS**: Melacak serangan DDoS berdasarkan jumlah koneksi per IP, memeriksa koneksi httpd per IP, dan memeriksa status SYN_RECV.
 
 ## Penggunaan
