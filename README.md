@@ -27,5 +27,6 @@ Script bash ini adalah tool simple untuk memantau dan mengelola server dengan be
 
 Silakan buat pull request untuk perbaikan atau fitur baru.
 
-## Informasi lainnya
-❗Perlu diingat script bash ini masih beta dan akan terus dicoba lakukan pengembangan dan penambahan tool. 😊
+## Catatan
+-❗Perlu diingat script bash ini masih beta dan akan terus dicoba lakukan pengembangan dan penambahan tool. 😊
+- Baru dicoba test pada server cloudlinux dengan panel WHM/cPanel.
