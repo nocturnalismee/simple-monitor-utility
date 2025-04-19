@@ -289,7 +289,8 @@ perform_scan() {
     kill $loading_pid
     wait $loading_pid 2>/dev/null
     printf "\r          \r"
-    echo "Pencarian selesai."
+    echo "scanning selesai."
+    read -p "Tekan Enter untuk kembali ke menu..."
 }
 
 # Fungsi untuk menampilkan menu scan backdoor
@@ -309,6 +310,82 @@ validate_input() {
         return 1
     fi
     return 0
+}
+
+# Function to display the Disk Audit menu
+show_disk_audit_menu() {
+    while true; do
+        print_header
+        echo -e "${YELLOW}${BOLD}Opsi Audit Disk Usage:${NC}"
+        echo
+        options=(
+            "Audit File Backup/Arsip > 1GB"
+            "Audit Disk Usage Mail"
+            "Audit & Delete File 0 Kb"
+            "Kembali ke Menu Utama"
+        )
+        select opt in "${options[@]}"
+        do
+            validate_input "$REPLY" || { sleep 1; continue; }
+            case $REPLY in
+                1)
+                    find_large_files
+                    ;;
+                2)
+                    check_email_usage
+                    ;;
+                3)
+                    find_zero_size_files
+                    ;;
+                4)
+                    return
+                    ;;
+                *)
+                    echo -e "${RED}Invalid option $REPLY. Please try again.${NC}"
+                    sleep 1
+                    continue
+                    ;;
+            esac
+        done
+    done
+}
+
+# Function to display the DDoS mitigation menu
+show_ddos_menu() {
+    while true; do
+        print_header
+        echo -e "${YELLOW}${BOLD}Opsi Mitigasi DDOS:${NC}"
+        echo
+        options=(
+            "Track DDoS by IP"
+            "Check httpd Connections"
+            "Check SYN_RECV Status"
+            "Kembali ke Menu Utama"
+        )
+        select opt in "${options[@]}"
+        do
+            validate_input "$REPLY" || { sleep 1; continue; }
+            case $REPLY in
+                1)
+                    track_ddos_by_ip
+                    ;;
+                2)
+                    check_httpd_connections
+                    ;;
+                3)
+                    check_syn_recv
+                    ;;
+                4)
+                    return
+                    ;;
+                *)
+                    echo -e "${RED}Invalid option $REPLY. Please try again.${NC}"
+                    sleep 1
+                    continue
+                    ;;
+            esac
+        done
+    done
 }
 
 # Menu Utama Bash
