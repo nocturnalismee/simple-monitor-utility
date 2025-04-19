@@ -1,55 +1,55 @@
 # 💻 Monitoring Commandline Utility 💻
 
-Script Bash ini adalah alat sederhana untuk memantau dan mengelola server dengan berbagai fitur seperti audit disk, audit judol, mitigasi DDoS, dan mitigasi backdoor.
+This Bash script is a simple tool for monitoring and managing servers with various features such as disk audit, gambling script audit, DDoS mitigation, and backdoor mitigation.
 
-## ✨ Fitur Utama
+## ✨ Main Features
 
-- **🗄️ Audit Disk**:
-  - Memeriksa file backup/arsip yang lebih besar dari 1GB.
-  - Audit penggunaan disk untuk direktori mail.
-  - Menghapus file berukuran 0 Kb di direktori home user.
-- **🔍 Audit Judol**:
-  - Mencari script judi berdasarkan file keyword lokal. (Berinama dan simpan keyword anda di `/etc/judaylist.txt` ).
-- **🛡️ Mitigasi DDoS**:
-  - Melacak serangan DDoS berdasarkan jumlah koneksi per IP.
-  - Memeriksa koneksi httpd per IP.
-  - Memeriksa status SYN_RECV.
-- **🛡️ Mitigasi File Backdoor (Beta)**:
-  - Memindai file pada direktori website `/home/username/*` untuk potensi script backdoor. keyword atau pattern simpan di local `patterns=("string or pattern in here" "etc")`
+- **🗄️ Disk Audit**:
+  - Check backup/archive files larger than 1GB.
+  - Audit disk usage for mail directories.
+  - Delete files sized 0 Kb in the user's home directory.
+- **🔍 Gambling Script Audit**:
+  - Search for gambling scripts based on a local keyword file. (Name and save your keywords in `/etc/judaylist.txt`).
+- **🛡️ DDoS Mitigation**:
+  - Track DDoS attacks based on the number of connections per IP.
+  - Check httpd connections per IP.
+  - Check SYN_RECV status.
+- **🛡️ Backdoor File Mitigation (Beta)**:
+  - Scan files in the website directory `/home/username/*` for potential backdoor scripts. Save keywords or patterns locally in `patterns=("string or pattern in here" "etc")`
 
-## 🚀 Cara Penggunaan
+## 🚀 Usage
 
-1. Jalankan script dengan perintah:
+1. Run the script with the command:
    ```bash
    ./monitor-utility.sh
    ```
-2. Pilih opsi yang diinginkan dari menu yang tersedia.
+2. Select the desired option from the available menu.
 
-## 📋 Persyaratan
+## 📋 Requirements
 
-- **Bash**: Pastikan Bash terinstal di sistem Anda.
-- **Akses Root**: Diperlukan untuk beberapa fitur.
+- **Bash**: Ensure Bash is installed on your system.
+- **Root Access**: Required for some features.
 
-## ⚙️ Instalasi
+## ⚙️ Installation
 
-1. Clone repository ini:
+1. Clone this repository:
    ```bash
    git clone <repository-url>
    ```
-2. Pastikan script memiliki izin eksekusi:
+2. Ensure the script has execution permissions:
    ```bash
    chmod +x monitor-utility.sh
    ```
 
-## Catatan
-- ❗Perlu diingat script bash ini masih beta dan akan terus dicoba lakukan pengembangan dan penambahan tool. 😊
-- ❗Baru dicoba test pada server cloudlinux dengan panel WHM/cPanel.
+## Notes
 
+- ❗Please note that this Bash script is still in beta and will continue to be developed and expanded with additional tools. 😊
+- ❗Tested only on CloudLinux servers with WHM/cPanel panel.
 
-## 🤝 Kontribusi
+## 🤝 Contributions
 
-Kami menyambut kontribusi dari komunitas. Silakan buat pull request untuk perbaikan atau fitur baru.
+We welcome contributions from the community. Please create a pull request for improvements or new features. 🤗
 
-## 📄 Lisensi
+## 📄 License
 
-Proyek ini dilisensikan di bawah lisensi MIT. Lihat file LICENSE untuk detail lebih lanjut.
+This project is licensed under the MIT License. See the LICENSE file for more details.
