@@ -235,70 +235,45 @@ find_judi_scripts() {
 }
 
 # BACKDOOR SCAN FUNCTION
-# Fungsi untuk meminta input username cPanel
-get_username() {
-    read -p "Input username cPanel: " USERNAME
-    if [[ -z "$USERNAME" ]]; then
-        echo "Username tidak boleh kosong."
-        exit 1
-    fi
-}
-
-# Fungsi untuk memeriksa keberadaan direktori website
-check_website_dir() {
-    WEBSITE_DIR="/home/$USERNAME/"
-    if [[ ! -d "$WEBSITE_DIR" ]]; then
-        echo "Direktori $WEBSITE_DIR tidak ditemukan."
-        exit 1
-    fi
-}
-
 # Fungsi untuk melakukan scanning backdoor
 perform_scan() {
-    local patterns=("upload_chunk_size_bytes" "fm_redirect" "auth_users" "getClientIP")
+    print_header
+    local patterns=("upload_chunk_size_bytes")
+    local username
+    local website_dir
     found_any=false
-    echo "SCANNING, PLEASE WAIT !!"
-    local dots=""
-    while [ -d /proc/$$ ]; do
-        printf "\r[%-5s]" "$dots"
-        sleep 0.5
-        dots="${dots}."
-        if [ "${#dots}" -gt 5 ]; then
-            dots=""
-        fi
-    done &
-    loading_pid=$!
+
+    echo "Masukan username cpanel untuk scan file backdoor, tekan enter dan silahkan di tungguu beberapa saat."
+    read -p "Username: " username
+    if [[ -z "$username" ]]; then
+        echo "Username tidak boleh kosong."
+        return 1
+    fi
+
+    website_dir="/home/$username/"
+    if [[ ! -d "$website_dir" ]]; then
+        echo "Direktori $website_dir tidak ditemukan."
+        return 1
+    fi
+
 
     for pattern in "${patterns[@]}"; do
-        find "$WEBSITE_DIR" -type f | while read -r local_file; do
+        find "$website_dir" -type f | while read -r local_file; do
             if grep -qF "$pattern" "$local_file"; then
                 if [ "$found_any" = false ]; then
                     echo "Potensi script backdoor ditemukan pada path direktori dibawah:"
                     found_any=true
                 fi
-                echo "$local_file"
+
+                echo " > $local_file"
             fi
         done
     done
 
     echo
     if [ "$found_any" = false ]; then
-        echo "Tidak ada potensi script backdoor yang ditemukan saat ini."
+        echo "Tidak ditemukan potensi script backdoor yang lainnya saat ini."
     fi
-
-    kill $loading_pid
-    wait $loading_pid 2>/dev/null
-    printf "\r          \r"
-    echo "scanning selesai."
-    read -p "Tekan Enter untuk kembali ke menu..."
-}
-
-# Fungsi untuk menampilkan menu scan backdoor
-show_backdoor_scan_menu() {
-    print_header
-    get_username
-    check_website_dir
-    perform_scan
     print_footer
     read -p "Tekan Enter untuk kembali ke menu..."
 }
@@ -414,7 +389,7 @@ while true; do
                 show_ddos_menu
                 ;;
             4)
-                show_backdoor_scan_menu
+                perform_scan
                 ;;
             5)
                 echo "Exiting."
