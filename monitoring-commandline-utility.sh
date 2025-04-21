@@ -1,5 +1,6 @@
 #!/bin/bash
-# Arief Project monitoring
+# Create & build by Arief (nocturnalismee)
+# source https://github.com/nocturnalismee/simple-monitor-utility
 
 # Additional color codes for theming
 RED='\033[0;31m'
@@ -21,16 +22,16 @@ set -o nounset  # Treat unset variables as an error
 # Trap to handle cleanup on exit
 trap 'echo "Exiting..."; exit 1' SIGINT SIGTERM
 
-# Function to display text centered in a box
+# Function to display text centered in a box with a modern look
 print_centered_in_box() {
     local text="$1"
     local terminal_width=$(tput cols)
     local text_length=${#text}
     local padding=$(( (terminal_width - text_length - 4) / 2 ))
-    local border="+$(printf -- '-%.0s' $(seq 1 $((terminal_width - 2))))+"
+    local border="${GREEN}+$(printf -- '=%.0s' $(seq 1 $((terminal_width - 2))))+${NC}"
     local padding_spaces=$(printf ' %.0s' $(seq 1 $padding))
     echo -e "$border"
-    echo -e "|${padding_spaces}${HEADER_BG}${BOLD}${text}${NC}${padding_spaces}|"
+    echo -e "|${padding_spaces}${HEADER_BG}${BOLD}${UNDERLINE}${text}${NC}${padding_spaces}|"
     echo -e "$border"
 }
 
@@ -235,15 +236,15 @@ find_judi_scripts() {
 }
 
 # BACKDOOR SCAN FUNCTION
-# Fungsi untuk melakukan scanning backdoor
+# Fungsi untuk melakukan scanning backdoor menggunakan file keyword
 perform_scan() {
     print_header
-    local patterns=("upload_chunk_size_bytes")
+    local keyword_file="/etc/bakdor-key.txt" # Path ke file keyword
     local username
     local website_dir
     found_any=false
 
-    echo "Masukan username cpanel untuk scan file backdoor, tekan enter dan silahkan di tungguu beberapa saat."
+    echo "Masukan username cpanel untuk scan file backdoor, tekan enter dan silahkan di tunggu beberapa saat."
     read -p "Username: " username
     if [[ -z "$username" ]]; then
         echo "Username tidak boleh kosong."
@@ -256,21 +257,23 @@ perform_scan() {
         return 1
     fi
 
+    # Periksa apakah file keyword ada dan dapat dibaca
+    if [[ ! -r "$keyword_file" ]]; then
+        echo "File keyword '$keyword_file' tidak ditemukan atau tidak dapat dibaca."
+        return 1
+    fi
 
-    for pattern in "${patterns[@]}"; do
-        find "$website_dir" -type f | while read -r local_file; do
-            if grep -qF "$pattern" "$local_file"; then
-                if [ "$found_any" = false ]; then
-                    echo "Potensi script backdoor ditemukan pada path direktori dibawah:"
-                    found_any=true
-                fi
-
-                echo " > $local_file"
+    # Gunakan grep dengan file keyword
+    find "$website_dir" -type f | while read -r local_file; do
+        if grep -qFf "$keyword_file" "$local_file"; then
+            if [ "$found_any" = false ]; then
+                echo "Potensi script backdoor ditemukan pada path direktori dibawah:"
+                found_any=true
             fi
-        done
+            echo " > $local_file"
+        fi
     done
 
-    echo
     if [ "$found_any" = false ]; then
         echo "Tidak ditemukan potensi script backdoor yang lainnya saat ini."
     fi
@@ -363,49 +366,73 @@ show_ddos_menu() {
     done
 }
 
+# Function to display the Judol Audit menu
+show_judol_audit_menu() {
+    while true; do
+        print_header
+        echo -e "${YELLOW}${BOLD}Opsi Audit Judol:${NC}"
+        echo
+        options=(
+            "Cari Script Judi"
+            "Kembali ke Menu Utama"
+        )
+        select opt in "${options[@]}"
+        do
+            validate_input "$REPLY" || { sleep 1; continue; }
+            case $REPLY in
+                1)
+                    find_judi_scripts
+                    ;;
+                2)
+                    return
+                    ;;
+                *)
+                    echo -e "${RED}Invalid option $REPLY. Please try again.${NC}"
+                    sleep 1
+                    continue
+                    ;;
+            esac
+        done
+    done
+}
+
 # Menu Utama Bash
 while true; do
     print_header
     echo "Please choose an option:"
     echo
-    options=(
-        "Audit Disk"
-        "Audit Judol"
-        "Mitigasi DDoS"
-        "Mitigasi Backdoor (beta)"
-        "EXIT"
-    )
-    select opt in "${options[@]}"
-    do
-        validate_input "$REPLY" || { sleep 1; continue; }
-        case $REPLY in
-            1)
-                show_disk_audit_menu
-                ;;
-            2)
-                show_judol_audit_menu
-                ;;
-            3)
-                show_ddos_menu
-                ;;
-            4)
-                perform_scan
-                ;;
-            5)
-                echo "Exiting."
-                exit 0
-                ;;
-            *)
-                echo -e "${RED}Invalid option $REPLY. Please try again.${NC}"
-                sleep 1
-                continue
-                ;;
-        esac
-    done
-    # Ensure keyword file has correct permissions
-    if [ -r "$keyword_file" ]; then
-        chmod 600 "$keyword_file"
-    fi
+    echo -e "${GREEN}${BOLD}1) Audit Disk${NC}"
+    echo -e "${GREEN}${BOLD}2) Audit Judol${NC}"
+    echo -e "${GREEN}${BOLD}3) Mitigasi DDoS${NC}"
+    echo -e "${GREEN}${BOLD}4) Mitigasi Backdoor (beta)${NC}"
+    echo -e "${GREEN}${BOLD}5) EXIT${NC}"
+    echo
+
+    read -p "#? " REPLY
+    validate_input "$REPLY" || { sleep 1; continue; }
+    case $REPLY in
+        1)
+            show_disk_audit_menu
+            ;;
+        2)
+            show_judol_audit_menu
+            ;;
+        3)
+            show_ddos_menu
+            ;;
+        4)
+            perform_scan
+            ;;
+        5)
+            echo "Exiting."
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Invalid option $REPLY. Please try again.${NC}"
+            sleep 1
+            continue
+            ;;
+    esac
 
     # Use mktemp for temporary files if needed
     temp_file=$(mktemp)
