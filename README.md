@@ -15,13 +15,13 @@ This Bash script is a simple tool for monitoring and managing servers with vario
   - Check httpd connections per IP.
   - Check SYN_RECV status.
 - **🛡️ Backdoor File Mitigation (Beta)**:
-  - Scan files in the website directory `/home/username/*` for potential backdoor scripts. Save keywords or patterns locally in `patterns=("string or pattern in here" "etc")`
+  - Scan files in the website directory `/home/username/*` for potential backdoor scripts. Save keywords or patterns locally in `/etc/bakdor-key.txt`.
 
 ## 🚀 Usage
 
 1. Run the script with the command:
    ```bash
-   ./monitor-utility.sh
+   ./monitoring-commandline-utility.sh
    ```
 2. Select the desired option from the available menu.
 
@@ -38,7 +38,9 @@ This Bash script is a simple tool for monitoring and managing servers with vario
    ```
 2. Ensure the script has execution permissions:
    ```bash
-   chmod +x monitor-utility.sh
+   chmod +x monitoring-commandline-utility.sh
+   or
+   chmod 777 monitoring-commandline-utility.sh
    ```
 
 ## Notes
