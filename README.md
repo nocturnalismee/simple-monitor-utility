@@ -9,13 +9,15 @@ This Bash script is a simple tool for monitoring and managing servers with vario
   - Audit disk usage for mail directories.
   - Delete files sized 0 Kb in the user's home directory.
 - **🔍 Gambling Script Audit**:
-  - Search for gambling scripts based on a local keyword file. (Name and save your keywords in `/etc/judaylist.txt`).
+  - Search for gambling scripts in the website directory `/home/*/`.
+  - Create and save your keywords in `/etc/judaylist.txt`.
 - **🛡️ DDoS Mitigation**:
   - Track DDoS attacks based on the number of connections per IP.
   - Check httpd connections per IP.
   - Check SYN_RECV status.
 - **🛡️ Backdoor File Mitigation (Beta)**:
-  - Scan files in the website directory `/home/username/*` for potential backdoor scripts. Save keywords or patterns locally in `/etc/bakdor-key.txt`.
+  - Scan files in the website directory `/home/*/` for potential backdoor scripts.
+  - Create & save keywords or patterns locally in `/etc/bakdor-key.txt`.
 
 ## 🚀 Usage
 
@@ -34,7 +36,7 @@ This Bash script is a simple tool for monitoring and managing servers with vario
 
 1. Clone this repository:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/nocturnalismee/simple-monitor-utility.git
    ```
 2. Ensure the script has execution permissions:
    ```bash
@@ -42,7 +44,6 @@ This Bash script is a simple tool for monitoring and managing servers with vario
    or
    chmod 777 monitoring-commandline-utility.sh
    ```
-
 ## Notes
 
 - ❗Please note that this Bash script is still in beta and will continue to be developed and expanded with additional tools. 😊
