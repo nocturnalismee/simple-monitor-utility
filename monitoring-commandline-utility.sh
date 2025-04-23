@@ -22,31 +22,42 @@ set -o nounset  # Treat unset variables as an error
 # Trap to handle cleanup on exit
 trap 'echo "Exiting..."; exit 1' SIGINT SIGTERM
 
-# Function to display text centered in a box with a modern look
-print_centered_in_box() {
-    local text="$1"
-    local terminal_width=$(tput cols)
-    local text_length=${#text}
-    local padding=$(( (terminal_width - text_length - 4) / 2 ))
-    local border="${GREEN}+$(printf -- '=%.0s' $(seq 1 $((terminal_width - 2))))+${NC}"
-    local padding_spaces=$(printf ' %.0s' $(seq 1 $padding))
-    echo -e "$border"
-    echo -e "|${padding_spaces}${HEADER_BG}${BOLD}${UNDERLINE}${text}${NC}${padding_spaces}|"
-    echo -e "$border"
-}
-
-# Function to display a themed header
+#Header
 print_header() {
-    clear
-    print_centered_in_box "Monitoring Commandline Utility"
-    echo
+  clear
+  local terminal_width=$(tput cols)
+  local header_text="Monitoring Commandline Utility"
+  local date_text="Date: $(date)"
+  local header_padding=$(( (terminal_width - ${#header_text}) / 2 ))
+  local date_padding=$(( (terminal_width - ${#date_text}) / 2 ))
+  echo -e "\033[1;32m\033[1m$(printf "%${header_padding}s%s" "" "$header_text")\033[0m"
+  echo -e "\033[1;37m\033[1m$(printf "%${date_padding}s%s" "" "$date_text")\033[0m"
+  printf "%${terminal_width}s\n" "" | tr ' ' '-'
+  echo
 }
 
-# Function to display a themed footer
+# Footer
 print_footer() {
-    print_centered_in_box "Selesai"
-    echo
+  local terminal_width=$(tput cols)
+  local footer_text="Complete"
+  local footer_padding=$(( (terminal_width - ${#footer_text}) / 2 ))
+  echo
+  echo -e "\033[1;32m\033[1m$(printf "%${footer_padding}s%s" "" "$footer_text")\033[0m"
+  printf "%${terminal_width}s\n" "" | tr ' ' '-'
 }
+
+ # Function to display text centered in a box
+ print_centered_in_box() {
+  local text="$1"
+  local terminal_width=$(tput cols)
+  local text_length=${#text}
+  local padding=$(( (terminal_width - text_length - 4) / 2 ))
+  local border="+$(printf -- '-%.0s' $(seq 1 $((terminal_width - 2))))+"
+  local padding_spaces=$(printf ' %.0s' $(seq 1 $padding))
+  echo -e "$border"
+  echo -e "|${padding_spaces}${text}${padding_spaces}|"
+  echo -e "$border"
+ }
 
 # Disk Audit Functions
 # Function to find files larger than 1GB, sorted by user then size (desc)
@@ -58,10 +69,11 @@ find_large_files() {
     local results
     # Use find, du, sort. nice/ionice added for lower priority execution.
     results=$(nice ionice -c 3 find /home/* -path '/home/*/mail' -prune -o -type f -size +1G -exec du -sh {} + 2>/dev/null | nice ionice -c 3 sort -k2,2 -k1,1hr)
+    clear
     if [ -z "$results" ]; then
         echo "No files found larger than 1GB."
     else
-        echo -e "${RED}Ukuran (GB) | Direktori/File${NC}"
+        echo -e "${RED}Size       | Direktori File${NC}"
         echo "-----------------------------------------"
         echo "$results" | while read -r line; do
             size=$(echo "$line" | awk '{print $1}')
@@ -70,7 +82,6 @@ find_large_files() {
         done
     fi
     echo "-----------------------------------------"
-    echo -e "${GREEN}Search complete.${NC}"
     print_footer
     read -p "Press Enter to return to the menu..."
 }
@@ -109,7 +120,7 @@ check_email_usage() {
     fi
 
     echo "-------------------------------------------------------------"
-    echo -e "${GREEN}Email usage check complete.${NC}"
+   # echo -e "${GREEN}Email usage check complete.${NC}"
     print_footer
     read -p "Press Enter to return to the menu..."
 }
@@ -143,7 +154,7 @@ find_zero_size_files() {
         fi
     fi
     echo "-----------------------------------------"
-    echo -e "${GREEN}Pencarian selesai.${NC}"
+    # echo -e "${GREEN}Pencarian selesai.${NC}"
     print_footer
     read -p "Tekan Enter untuk kembali ke menu..."
 }
@@ -206,10 +217,10 @@ find_judi_scripts() {
         return 1 # Return non-zero status
     fi
 
-    echo -e "${YELLOW}Included files: index.*${NC}"
-    echo -e "${YELLOW}Excluded Dirs: cache, tmp, spamcleaner, Scroller, checkout, .cache, .local, .npm, .node-gyp, node_modules${NC}"
-    echo -e "${YELLOW}Excluded Exts: js, map, tpl, ts, log, bak, old, swp, zip, tar, gz, bz2, xz, 7z, rar${NC}"
-    echo "-----------------------------------------"
+    # echo -e "${YELLOW}Included files: index.*${NC}"
+    # echo -e "${YELLOW}Excluded Dirs: cache, tmp, spamcleaner, Scroller, checkout, .cache, .local, .npm, .node-gyp, node_modules${NC}"
+    # echo -e "${YELLOW}Excluded Exts: js, map, tpl, ts, log, bak, old, swp, zip, tar, gz, bz2, xz, 7z, rar${NC}"
+    # echo "-----------------------------------------"
 
     local results
     # Run grep using the local keyword file. nice/ionice added.
@@ -218,7 +229,7 @@ find_judi_scripts() {
         -f "$keyword_file" \
         --exclude-dir={cache,tmp,spamcleaner,Scroller,checkout,.cache,.local,.npm,.node-gyp,node_modules} \
         --exclude='*.{js,map,tpl,ts,log,bak,old,swp,zip,tar,gz,bz2,xz,7z,rar}' \
-        /home/* 2>/dev/null)
+        /home/*/ 2>/dev/null)
 
     if [ -z "$results" ]; then
         echo "No potential judi script files found matching the criteria."
@@ -230,7 +241,7 @@ find_judi_scripts() {
 
     echo "-----------------------------------------"
 
-    echo -e "${GREEN}Search complete.${NC}"
+    # echo -e "${GREEN}Search complete.${NC}"
     print_footer
     read -p "Press Enter to return to the menu..."
 }
