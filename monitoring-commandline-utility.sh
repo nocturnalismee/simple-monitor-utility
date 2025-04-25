@@ -1,8 +1,17 @@
 #!/bin/bash
 # Create & build by Arief (nocturnalismee)
-# source https://github.com/nocturnalismee/simple-monitor-utility
+# source code https://github.com/nocturnalismee/simple-monitor-utility
 
-# Additional color codes for theming
+# Enable safer script execution
+set -o errexit  # Exit immediately if a command exits with a non-zero status.
+set -o pipefail # Return value of a pipeline is the status of the last command to exit with non-zero status
+set -o nounset  # Treat unset variables as an error
+
+# Trap to handle cleanup on exit
+trap 'echo "Exiting..."; exit 1' SIGINT SIGTERM
+
+# ////////////////////////////////////////// THEME FUNCTION //////////////////////////////////////////
+# Additional color codes for theme
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -13,14 +22,6 @@ BOLD='\033[1m'
 UNDERLINE='\033[4m'
 HEADER_BG='\033[44m'
 FOOTER_BG='\033[45m'
-
-# Enable safer script execution
-set -o errexit  # Exit immediately if a command exits with a non-zero status.
-set -o pipefail # Return value of a pipeline is the status of the last command to exit with non-zero status
-set -o nounset  # Treat unset variables as an error
-
-# Trap to handle cleanup on exit
-trap 'echo "Exiting..."; exit 1' SIGINT SIGTERM
 
 #Header
 print_header() {
@@ -59,6 +60,9 @@ print_footer() {
   echo -e "$border"
  }
 
+# ////////////////////////////////////////// END THEME FUNCTION //////////////////////////////////////////
+
+# ////////////////////////////////////////// CMD COMBINATION FUNCTION ///////////////////////////////////////////////
 # Disk Audit Functions
 # Function to find files larger than 1GB, sorted by user then size (desc)
 find_large_files() {
@@ -301,6 +305,9 @@ validate_input() {
     return 0
 }
 
+# ////////////////////////////////////////// END CMD FUNCTION ///////////////////////////////////////////////
+
+# /////////////////////////////////////////// MENU FUNCTION ////////////////////////////////////////////////
 # Function to display the Disk Audit menu
 show_disk_audit_menu() {
     while true; do
@@ -444,7 +451,7 @@ while true; do
             continue
             ;;
     esac
-
+# /////////////////////////////////////////// END MENU FUNCTION ////////////////////////////////////////////////
     # Use mktemp for temporary files if needed
     temp_file=$(mktemp)
 done
