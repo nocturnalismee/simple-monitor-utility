@@ -1,315 +1,683 @@
-# Create & build by Arief (nocturnalismee)
-# source https://github.com/nocturnalismee/simple-monitor-utility
+#!/usr/bin/env python3
+# ─────────────────────────────────────────────-
+# Monitoring Commandline Utility
+# Original by: Arief (nocturnalismee)
+# Source: https://github.com/nocturnalismee/simple-monitor-utility
+# Version : 1.1
+# ─────────────────────────────────────────────
+
 import os
+import sys
 import subprocess
+import threading
+import time
+import logging
+import shutil
+from datetime import datetime
+from pathlib import Path
 
-def loading_animation(duration=3):
-    import time
-    import sys
-    animation = "|/-\\"
-    idx = 0
-    end_time = time.time() + duration
-    while time.time() < end_time:
-        print(f"\rLoading {animation[idx % len(animation)]}", end="")
-        idx += 1
-        time.sleep(0.1)
-    print("\rDone!     ")
+# ─────────────────────────────────────────────
+# KONFIGURASI
+# ─────────────────────────────────────────────
+VERSION = "2.0.0"
+LOG_DIR = "/var/log/monitor-utility"
+LOG_FILE = f"{LOG_DIR}/audit_{datetime.now().strftime('%Y%m%d')}.log"
+KEYWORD_JUDI = "/etc/judaylist.txt"
+KEYWORD_BACKDOOR = "/etc/bakdor-key.txt"
 
-# Fungsi untuk menampilkan teks dengan warna hijau dan tebal
+LARGE_FILE_THRESHOLD = "+1G"
+EMAIL_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024  # 10 GiB
 
-def print_green_bold_text(text):
-    terminal_width = os.get_terminal_size().columns
-    text_length = len(text)
-    padding = (terminal_width - text_length) // 2
-    print(" " * padding + "\033[1;32m" + text + "\033[0m")
+EXCLUDE_DIRS = ["cache", "tmp", "spamcleaner", "Scroller", "checkout",
+                ".cache", ".local", ".npm", ".node-gyp", "node_modules"]
+EXCLUDE_EXTS = ["js", "map", "tpl", "ts", "log", "bak", "old", "swp",
+                "zip", "tar", "gz", "bz2", "xz", "7z", "rar"]
 
-# Memperbarui fungsi print_header untuk menggunakan teks hijau dan tebal
+# ─────────────────────────────────────────────
+# WARNA ANSI
+# ─────────────────────────────────────────────
+class Color:
+    RESET   = "\033[0m"
+    BOLD    = "\033[1m"
+    RED     = "\033[0;31m"
+    GREEN   = "\033[0;32m"
+    YELLOW  = "\033[1;33m"
+    CYAN    = "\033[0;36m"
+    MAGENTA = "\033[0;35m"
+    WHITE   = "\033[1;37m"
+    BOLD_GREEN = "\033[1;32m"
+    DIM     = "\033[2m"
+
+def colorize(text: str, color: str) -> str:
+    return f"{color}{text}{Color.RESET}"
+
+# ─────────────────────────────────────────────
+# LOGGING SETUP
+# ─────────────────────────────────────────────
+def setup_logging():
+    """Setup logging ke file dan console."""
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            handlers=[
+                logging.FileHandler(LOG_FILE),
+            ]
+        )
+    except PermissionError:
+        # Fallback ke /tmp jika tidak punya akses ke /var/log
+        fallback_log = f"/tmp/monitor-utility_{datetime.now().strftime('%Y%m%d')}.log"
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            handlers=[logging.FileHandler(fallback_log)]
+        )
+        print(colorize(f"⚠ Log disimpan ke fallback: {fallback_log}", Color.YELLOW))
+
+def log(message: str, level: str = "info"):
+    """Wrapper logging."""
+    getattr(logging, level, logging.info)(message)
+
+# ─────────────────────────────────────────────
+# UI HELPER
+# ─────────────────────────────────────────────
+def get_terminal_width() -> int:
+    return shutil.get_terminal_size(fallback=(80, 24)).columns
+
+def print_centered(text: str, color: str = Color.BOLD_GREEN):
+    width = get_terminal_width()
+    padding = max(0, (width - len(text)) // 2)
+    print(" " * padding + colorize(text, color))
+
+def print_separator(char: str = "─", color: str = Color.DIM):
+    width = get_terminal_width()
+    print(colorize(char * width, color))
 
 def print_header():
     os.system('cls' if os.name == 'nt' else 'clear')
-    print_green_bold_text("Monitoring Commandline Utility")
+    print_separator("═", Color.BOLD_GREEN)
+    print_centered(f"  Monitoring Commandline Utility  v{VERSION}  ")
+    print_centered(f"  {datetime.now().strftime('%A, %d %B %Y  %H:%M:%S')}  ", Color.DIM)
+    print_separator("═", Color.BOLD_GREEN)
+    print()
 
-# Fungsi untuk menampilkan footer
+def print_footer(message: str = "Selesai"):
+    print()
+    print_separator()
+    print_centered(f"✔ {message}", Color.BOLD_GREEN)
+    print_separator()
 
-def print_footer():
-    print_green_bold_text("Selesai")
+def press_enter():
+    input(colorize("\n  Tekan Enter untuk kembali ke menu...", Color.CYAN))
 
-# Fungsi untuk mencari file besar
+def confirm_action(prompt: str) -> bool:
+    """Minta konfirmasi dengan mengetik 'ya' (bukan hanya y)."""
+    print(colorize(f"\n⚠  {prompt}", Color.YELLOW))
+    answer = input(colorize("   Ketik 'ya' untuk konfirmasi: ", Color.RED)).strip().lower()
+    return answer == "ya"
 
+# ─────────────────────────────────────────────
+# LOADING ANIMATION (non-blocking via thread)
+# ─────────────────────────────────────────────
+class LoadingAnimation:
+    def __init__(self, message: str = "Memproses"):
+        self.message = message
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(target=self._animate, daemon=True)
+
+    def _animate(self):
+        frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        idx = 0
+        while not self._stop_event.is_set():
+            frame = colorize(frames[idx % len(frames)], Color.CYAN)
+            print(f"\r  {frame}  {self.message}...", end="", flush=True)
+            idx += 1
+            time.sleep(0.1)
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self, done_message: str = "Selesai"):
+        self._stop_event.set()
+        self._thread.join()
+        print(f"\r  {colorize('✔', Color.BOLD_GREEN)}  {done_message}          ")
+
+# ─────────────────────────────────────────────
+# HELPER: JALANKAN COMMAND DENGAN AMAN
+# ─────────────────────────────────────────────
+def run_command(args: list, timeout: int = 300) -> tuple[int, str, str]:
+    """
+    Jalankan command sebagai list (aman dari shell injection).
+    Return: (returncode, stdout, stderr)
+    """
+    try:
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return -1, "", "Command timeout setelah {timeout} detik"
+    except FileNotFoundError as e:
+        return -1, "", f"Command tidak ditemukan: {e}"
+    except Exception as e:
+        return -1, "", str(e)
+
+def run_shell(command: str, timeout: int = 300) -> str:
+    """Jalankan shell command dan kembalikan output. Digunakan hanya untuk pipeline kompleks."""
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        return result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        return "[ERROR] Command timeout"
+    except Exception as e:
+        return f"[ERROR] {e}"
+
+# ─────────────────────────────────────────────
+# MENU 1: AUDIT DISK
+# ─────────────────────────────────────────────
 def find_large_files():
     print_header()
-    print("Mencari file backup atau lainnya dengan ukuran > 1GB at /home/*...")
-    loading_animation()
-    print("Mohon menunggu...")
-    print("-----------------------------------------")
-    results = subprocess.getoutput("find /home/* -path '/home/*/mail' -prune -o -type f -size +1G -exec du -sh {} + 2>/dev/null | sort -k2,2 -k1,1hr")
-    if not results:
-        print("No files found larger than 1GB.")
-    else:
-        print("Ukuran (GB) | Direktori/File")
-        print("-----------------------------------------")
-        for line in results.splitlines():
-            size, path = line.split(maxsplit=1)
-            print(f"{size:<10} | {path}")
-    print("-----------------------------------------")
-    print("Search complete.")
-    print_footer()
-    input("Press Enter to return to the menu...")
+    print(colorize("  [AUDIT] File Backup/Arsip > 1GB", Color.BOLD))
+    print(colorize("  Lokasi: /home/*\n", Color.DIM))
 
-# Fungsi untuk memeriksa penggunaan email
+    anim = LoadingAnimation("Mencari file besar")
+    anim.start()
+    
+    results = run_shell(
+        "find /home/* -path '/home/*/mail' -prune -o -type f -size +1G -print0 2>/dev/null "
+        "| xargs -0 du -sh 2>/dev/null | sort -k1,1hr"
+    )
+
+    anim.stop("Pencarian selesai")
+    print_separator()
+
+    if not results:
+        print(colorize("  ✔ Tidak ada file yang lebih besar dari 1GB.", Color.GREEN))
+    else:
+        print(colorize(f"  {'Ukuran':<12} {'Path'}", Color.WHITE))
+        print_separator("-")
+        lines = results.splitlines()
+        for line in lines:
+            parts = line.split(maxsplit=1)
+            if len(parts) == 2:
+                size, path = parts
+                print(f"  {colorize(size, Color.YELLOW):<20} {path}")
+        print_separator("-")
+        print(colorize(f"  Total ditemukan: {len(lines)} file", Color.CYAN))
+        log(f"find_large_files: {len(lines)} file ditemukan")
+
+    print_footer()
+    press_enter()
 
 def check_email_usage():
     print_header()
-    print("Listing disk usage for each email directory (/home/*/mail) lebih dari 10G...")
-    loading_animation()
-    print("Mohon menunggu...")
-    print("-------------------------------------------------------------")
-    print("Size (GB)       | Directory")
-    print("----------------|--------------------------------------------")
+    print(colorize("  [AUDIT] Disk Usage Email > 10GB", Color.BOLD))
+    print(colorize("  Lokasi: /home/*/mail\n", Color.DIM))
 
-    threshold = 10737418240  # 10 GiB
+    anim = LoadingAnimation("Menganalisa direktori mail")
+    anim.start()
 
-    results = subprocess.getoutput("find /home/* -maxdepth 1 -type d -name 'mail' -exec du -sb {} + 2>/dev/null | sort -k2,2 -k1,1nr")
+    results = run_shell(
+        "find /home/* -maxdepth 1 -type d -name 'mail' -exec du -sb {} + 2>/dev/null | sort -k1,1nr"
+    )
+
+    anim.stop("Analisa selesai")
+    print_separator()
+
     if not results:
-        print("No /home/*/mail directories found.")
+        print(colorize("  ✔ Tidak ada direktori /home/*/mail ditemukan.", Color.GREEN))
     else:
+        print(colorize(f"  {'Ukuran (GB)':<18} {'Direktori'}", Color.WHITE))
+        print_separator("-")
+        flagged = 0
         for line in results.splitlines():
-            bytes, dir = line.split(maxsplit=1)
-            gb = float(bytes) / (1024*1024*1024)
-            if int(bytes) > threshold:
-                print(f"\033[0;31m{gb:<15.2f} | {dir} [>10G]\033[0m")  # Red color
-    print("-------------------------------------------------------------")
-    print("Email usage check complete.")
-    print_footer()
-    input("Press Enter to return to the menu...")
+            parts = line.split(maxsplit=1)
+            if len(parts) != 2:
+                continue
+            bytes_str, directory = parts
+            try:
+                total_bytes = int(bytes_str)
+                gb = total_bytes / (1024 ** 3)
+                if total_bytes > EMAIL_THRESHOLD_BYTES:
+                    status = colorize(f"  {gb:<18.2f} {directory}  ⚠ >10GB", Color.RED)
+                    flagged += 1
+                    log(f"check_email_usage: {directory} = {gb:.2f}GB [FLAGGED]", "warning")
+                else:
+                    status = colorize(f"  {gb:<18.2f} {directory}", Color.DIM)
+                print(status)
+            except ValueError:
+                continue
 
-# Fungsi untuk mencari dan menghapus file berukuran 0 Kb
+        print_separator("-")
+        if flagged > 0:
+            print(colorize(f"  ⚠ {flagged} direktori melebihi 10GB!", Color.RED))
+        else:
+            print(colorize("  ✔ Semua direktori di bawah threshold 10GB.", Color.GREEN))
+
+    print_footer()
+    press_enter()
 
 def find_zero_size_files():
     print_header()
-    print("Mencari file dengan ukuran 0 Kb di /home/*...")
-    print("Mohon menunggu...")
-    print("-----------------------------------------")
-    results = subprocess.getoutput("find /home/* -type f -size 0 2>/dev/null")
-    if not results:
-        print("Tidak ada file dengan ukuran 0 Kb ditemukan.")
-    else:
-        print("File dengan ukuran 0 Kb ditemukan:")
-        print("Ukuran | File")
-        print("-------------------------")
-        for file in results.splitlines():
-            size = subprocess.getoutput(f"du -sh {file} | awk '{{print $1}}'")
-            print(f"{size:<7} | {file}")
-        print("-------------------------")
-        choice = input("Apakah Anda ingin menghapus file-file ini? (y/n): ")
-        if choice.lower() == 'y':
-            subprocess.run(f"echo '{results}' | xargs rm -f", shell=True)
-            print("File-file telah dihapus.")
-        else:
-            print("Penghapusan dibatalkan.")
-    print("-----------------------------------------")
-    print("Pencarian selesai.")
-    print_footer()
-    input("Tekan Enter untuk kembali ke menu...")
+    print(colorize("  [AUDIT] File Berukuran 0 KB", Color.BOLD))
+    print(colorize("  Lokasi: /home/*\n", Color.DIM))
 
-# Fungsi untuk menampilkan menu audit disk
+    anim = LoadingAnimation("Mencari file 0 KB")
+    anim.start()
+
+    returncode, stdout, stderr = run_command([
+        "find", "/home",
+        "-mindepth", "2",
+        "-type", "f",
+        "-size", "0"
+    ])
+
+    anim.stop("Pencarian selesai")
+    print_separator()
+
+    if not stdout:
+        print(colorize("  ✔ Tidak ada file 0 KB ditemukan.", Color.GREEN))
+        print_footer()
+        press_enter()
+        return
+
+    files = [f for f in stdout.splitlines() if f.strip()]
+    print(colorize(f"  Ditemukan {len(files)} file berukuran 0 KB:\n", Color.YELLOW))
+
+    page_size = 20
+    for i, filepath in enumerate(files):
+        print(colorize(f"  [{i+1:>4}] ", Color.DIM) + filepath)
+        if (i + 1) % page_size == 0 and (i + 1) < len(files):
+            cont = input(colorize(f"\n  Tampilkan {page_size} file berikutnya? (y/n): ", Color.CYAN))
+            if cont.lower() != 'y':
+                break
+
+    print_separator("-")
+    log(f"find_zero_size_files: {len(files)} file ditemukan")
+
+    if confirm_action(f"Hapus {len(files)} file ini secara PERMANEN?"):
+        deleted = 0
+        errors = 0
+        for filepath in files:
+            try:
+                p = Path(filepath)
+                if p.exists() and p.stat().st_size == 0:  # Double-check sebelum hapus
+                    p.unlink()
+                    deleted += 1
+                    log(f"Deleted: {filepath}")
+            except OSError as e:
+                print(colorize(f"  ✗ Gagal hapus {filepath}: {e}", Color.RED))
+                log(f"Failed to delete {filepath}: {e}", "error")
+                errors += 1
+
+        print(colorize(f"\n  ✔ Berhasil dihapus: {deleted} file", Color.GREEN))
+        if errors:
+            print(colorize(f"  ✗ Gagal dihapus: {errors} file", Color.RED))
+    else:
+        print(colorize("\n  Penghapusan dibatalkan.", Color.YELLOW))
+
+    print_footer()
+    press_enter()
 
 def show_disk_audit_menu():
-    while True:
-        print_header()
-        print("Opsi Audit Disk Usage:")
-        print("1) Audit File Backup/Arsip > 1GB")
-        print("2) Audit Disk Usage Mail")
-        print("3) Audit & Delete File 0 Kb")
-        print("4) Kembali ke Menu Utama")
+    menu_items = [
+        ("Audit File Backup/Arsip > 1GB", find_large_files),
+        ("Audit Disk Usage Mail",         check_email_usage),
+        ("Audit & Delete File 0 KB",      find_zero_size_files),
+    ]
+    show_submenu("Audit Disk Usage", menu_items)
 
-        choice = input("#? ")
-        if choice == '1':
-            find_large_files()
-        elif choice == '2':
-            check_email_usage()
-        elif choice == '3':
-            find_zero_size_files()
-        elif choice == '4':
-            return
-        else:
-            print("Invalid option. Please try again.")
-
-# Fungsi untuk melacak serangan DDoS berdasarkan jumlah koneksi per IP
-
-def track_ddos_by_ip():
-    print_header()
-    print("Melacak serangan DDoS berdasarkan jumlah koneksi per IP...")
-    print("-----------------------------------------")
-    results = subprocess.getoutput("netstat -ntu | awk '{print $5}' | cut -d: -f1 | sort | uniq -c | sort -nr | head")
-    print(results)
-    print("-----------------------------------------")
-    print_footer()
-    input("Tekan Enter untuk kembali ke menu...")
-
-# Fungsi untuk memeriksa jumlah koneksi httpd per IP
-
-def check_httpd_connections():
-    print_header()
-    print("Memeriksa jumlah koneksi httpd per IP...")
-    print("-----------------------------------------")
-    results = subprocess.getoutput("netstat -anp | grep ':80' | grep ESTABLISHED | awk '{print $5}' | cut -d: -f1 | sort | uniq -c | sort -nr | head")
-    print(results)
-    print("-----------------------------------------")
-    print_footer()
-    input("Tekan Enter untuk kembali ke menu...")
-
-# Fungsi untuk memeriksa proses httpd dengan status SYN_RECV
-
-def check_syn_recv():
-    print_header()
-    print("Memeriksa proses httpd dengan status SYN_RECV...")
-    print("-----------------------------------------")
-    results = subprocess.getoutput("netstat -n | grep 'SYN_RECV' | awk '{print $5}' | cut -d: -f1 | sort | uniq -c | sort -nr | head")
-    print(results)
-    print("-----------------------------------------")
-    print_footer()
-    input("Tekan Enter untuk kembali ke menu...")
-
-# Fungsi untuk menampilkan menu mitigasi DDoS
-
-def show_ddos_menu():
-    while True:
-        print_header()
-        print("Opsi Mitigasi DDOS:")
-        print("1) Track DDoS by IP")
-        print("2) Check httpd Connections")
-        print("3) Check SYN_RECV Status")
-        print("4) Kembali ke Menu Utama")
-
-        choice = input("#? ")
-        if choice == '1':
-            track_ddos_by_ip()
-        elif choice == '2':
-            check_httpd_connections()
-        elif choice == '3':
-            check_syn_recv()
-        elif choice == '4':
-            return
-        else:
-            print("Invalid option. Please try again.")
-
-# Fungsi untuk mencari script judi
-
+# ─────────────────────────────────────────────
+# MENU 2: AUDIT JUDOL
+# ─────────────────────────────────────────────
 def find_judi_scripts():
     print_header()
-    keyword_file = "/etc/judaylist.txt"
-    print(f"Searching for potential gambling scripts based on keywords in {keyword_file}...")
+    print(colorize("  [AUDIT] Script Judi / Gambling", Color.BOLD))
+    print(colorize(f"  Keyword file: {KEYWORD_JUDI}\n", Color.DIM))
 
-    if not os.path.isfile(keyword_file) or not os.access(keyword_file, os.R_OK):
-        print(f"Error: Keyword file '{keyword_file}' not found or not readable.")
-        print("Please ensure the file exists and has the correct permissions.")
-        input("Press Enter to return to the menu...")
+    # Validasi keyword file
+    if not os.path.isfile(KEYWORD_JUDI):
+        print(colorize(f"  ✗ Keyword file tidak ditemukan: {KEYWORD_JUDI}", Color.RED))
+        print(colorize("  Buat file tersebut dan isi dengan keyword (satu per baris).", Color.YELLOW))
+        press_enter()
         return
 
-    if os.path.getsize(keyword_file) == 0:
-        print(f"Warning: Keyword file '{keyword_file}' is empty.")
-        print("No keywords to search for. Aborting search.")
-        input("Press Enter to return to the menu...")
+    if not os.access(KEYWORD_JUDI, os.R_OK):
+        print(colorize(f"  ✗ File tidak dapat dibaca: {KEYWORD_JUDI}", Color.RED))
+        press_enter()
         return
 
-    print("Included files: index.*")
-    print("Excluded Dirs: cache, tmp, spamcleaner, Scroller, checkout, .cache, .local, .npm, .node-gyp, node_modules")
-    print("Excluded Exts: js, map, tpl, ts, log, bak, old, swp, zip, tar, gz, bz2, xz, 7z, rar")
-    print("-----------------------------------------")
+    if os.path.getsize(KEYWORD_JUDI) == 0:
+        print(colorize(f"  ⚠ Keyword file kosong: {KEYWORD_JUDI}", Color.YELLOW))
+        press_enter()
+        return
 
-    results = subprocess.getoutput(
-        "grep -ilr --include='index.*' -f {keyword_file} --exclude-dir={cache,tmp,spamcleaner,Scroller,checkout,.cache,.local,.npm,.node-gyp,node_modules} --exclude='*.{js,map,tpl,ts,log,bak,old,swp,zip,tar,gz,bz2,xz,7z,rar}' /home/* 2>/dev/null"
+    exclude_dir_args = []
+    for d in EXCLUDE_DIRS:
+        exclude_dir_args += ["--exclude-dir", d]
+
+    exclude_ext_args = []
+    for ext in EXCLUDE_EXTS:
+        exclude_ext_args += ["--exclude", f"*.{ext}"]
+
+    print(colorize("  Included files : index.*", Color.DIM))
+    print(colorize(f"  Excluded dirs  : {', '.join(EXCLUDE_DIRS)}", Color.DIM))
+    print(colorize(f"  Excluded exts  : {', '.join(EXCLUDE_EXTS)}", Color.DIM))
+    print()
+
+    anim = LoadingAnimation("Mencari script judi")
+    anim.start()
+
+    cmd = (
+        ["grep", "-ilr", "--include=index.*", f"-f{KEYWORD_JUDI}"]
+        + exclude_dir_args
+        + exclude_ext_args
+        + ["/home/"]
+    )
+    returncode, stdout, stderr = run_command(cmd, timeout=600)
+
+    anim.stop("Pencarian selesai")
+    print_separator()
+
+    if not stdout:
+        print(colorize("  ✔ Tidak ada file script judi ditemukan.", Color.GREEN))
+    else:
+        found_files = stdout.splitlines()
+        print(colorize(f"  ⚠ Ditemukan {len(found_files)} file potensial:\n", Color.RED))
+        for filepath in found_files:
+            print(colorize("  ⚑ ", Color.RED) + filepath)
+        log(f"find_judi_scripts: {len(found_files)} file flagged", "warning")
+        for f in found_files:
+            log(f"  JUDI: {f}", "warning")
+
+    print_footer()
+    press_enter()
+
+def show_judol_audit_menu():
+    menu_items = [
+        ("Cari Script Judi", find_judi_scripts),
+    ]
+    show_submenu("Audit Judol", menu_items)
+
+# ─────────────────────────────────────────────
+# MENU 3: MITIGASI DDOS
+# ─────────────────────────────────────────────
+def track_ddos_by_ip():
+    print_header()
+    print(colorize("  [DDoS] Top IP berdasarkan jumlah koneksi", Color.BOLD))
+    print_separator()
+
+    results = run_shell(
+        "netstat -ntu 2>/dev/null | awk '{print $5}' | grep -oE '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' "
+        "| sort | uniq -c | sort -rn | head -20"
     )
 
     if not results:
-        print("No potential judi script files found matching the criteria.")
+        print(colorize("  Tidak ada data koneksi aktif.", Color.YELLOW))
     else:
-        print("Potential judi script files found:")
+        print(colorize(f"  {'Koneksi':<10} {'IP Address'}", Color.WHITE))
+        print_separator("-")
         for line in results.splitlines():
-            print(line)
+            parts = line.split()
+            if len(parts) == 2:
+                count, ip = parts
+                color = Color.RED if int(count) > 100 else Color.YELLOW if int(count) > 20 else Color.RESET
+                print(f"  {colorize(count, color):<20} {ip}")
 
-    print("-----------------------------------------")
-    print("Search complete.")
     print_footer()
-    input("Press Enter to return to the menu...")
+    press_enter()
 
-# Fungsi untuk menampilkan menu audit judol
+def check_httpd_connections():
+    print_header()
+    print(colorize("  [DDoS] Koneksi HTTPD per IP (port 80 ESTABLISHED)", Color.BOLD))
+    print_separator()
 
-def show_judol_audit_menu():
-    while True:
-        print_header()
-        print("Opsi Audit Judol:")
-        print("1) Cari Script Judi")
-        print("2) Kembali ke Menu Utama")
+    results = run_shell(
+        "netstat -anp 2>/dev/null | grep ':80' | grep ESTABLISHED "
+        "| awk '{print $5}' | grep -oE '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' "
+        "| sort | uniq -c | sort -rn | head -20"
+    )
 
-        choice = input("#? ")
-        if choice == '1':
-            find_judi_scripts()
-        elif choice == '2':
-            return
-        else:
-            print("Invalid option. Please try again.")
+    if not results:
+        print(colorize("  Tidak ada koneksi ESTABLISHED di port 80.", Color.YELLOW))
+    else:
+        print(colorize(f"  {'Koneksi':<10} {'IP Address'}", Color.WHITE))
+        print_separator("-")
+        for line in results.splitlines():
+            parts = line.split()
+            if len(parts) == 2:
+                count, ip = parts
+                color = Color.RED if int(count) > 50 else Color.YELLOW if int(count) > 10 else Color.RESET
+                print(f"  {colorize(count, color):<20} {ip}")
 
-# Fungsi untuk melakukan scanning backdoor menggunakan file keyword
+    print_footer()
+    press_enter()
 
+def check_syn_recv():
+    print_header()
+    print(colorize("  [DDoS] IP dengan status SYN_RECV (indikasi SYN Flood)", Color.BOLD))
+    print_separator()
+
+    results = run_shell(
+        "netstat -n 2>/dev/null | grep 'SYN_RECV' "
+        "| awk '{print $5}' | grep -oE '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' "
+        "| sort | uniq -c | sort -rn | head -20"
+    )
+
+    if not results:
+        print(colorize("  ✔ Tidak ada koneksi SYN_RECV ditemukan.", Color.GREEN))
+    else:
+        print(colorize(f"  ⚠ SYN_RECV terdeteksi!\n", Color.RED))
+        print(colorize(f"  {'Count':<10} {'IP Address'}", Color.WHITE))
+        print_separator("-")
+        for line in results.splitlines():
+            parts = line.split()
+            if len(parts) == 2:
+                count, ip = parts
+                print(f"  {colorize(count, Color.RED):<20} {ip}")
+        log(f"check_syn_recv: SYN_RECV detected\n{results}", "warning")
+
+    print_footer()
+    press_enter()
+
+def show_ddos_menu():
+    menu_items = [
+        ("Track DDoS by IP",          track_ddos_by_ip),
+        ("Check HTTPD Connections",   check_httpd_connections),
+        ("Check SYN_RECV Status",     check_syn_recv),
+    ]
+    show_submenu("Mitigasi DDoS", menu_items)
+
+# ─────────────────────────────────────────────
+# MENU 4: MITIGASI BACKDOOR
+# ─────────────────────────────────────────────
 def perform_scan():
     print_header()
-    keyword_file = "/etc/bakdor-key.txt"
-    username = input("Masukan username cpanel untuk scan file backdoor, tekan enter dan silahkan di tunggu beberapa saat.\nUsername: ")
+    print(colorize("  [BACKDOOR] Scanner Script Backdoor", Color.BOLD))
+    print(colorize(f"  Keyword file: {KEYWORD_BACKDOOR}\n", Color.DIM))
+
+    # Validasi keyword file
+    if not os.path.isfile(KEYWORD_BACKDOOR):
+        print(colorize(f"  ✗ Keyword file tidak ditemukan: {KEYWORD_BACKDOOR}", Color.RED))
+        press_enter()
+        return
+
+    if not os.access(KEYWORD_BACKDOOR, os.R_OK):
+        print(colorize(f"  ✗ File tidak dapat dibaca: {KEYWORD_BACKDOOR}", Color.RED))
+        press_enter()
+        return
+
+    username = input(colorize("  Masukkan username cPanel yang ingin di-scan: ", Color.CYAN)).strip()
     if not username:
-        print("Username tidak boleh kosong.")
+        print(colorize("  ✗ Username tidak boleh kosong.", Color.RED))
+        press_enter()
+        return
+
+    import re
+    if not re.match(r'^[a-zA-Z0-9_\-]{1,32}$', username):
+        print(colorize("  ✗ Username tidak valid.", Color.RED))
+        press_enter()
         return
 
     website_dir = f"/home/{username}/"
     if not os.path.isdir(website_dir):
-        print(f"Direktori {website_dir} tidak ditemukan.")
+        print(colorize(f"  ✗ Direktori tidak ditemukan: {website_dir}", Color.RED))
+        press_enter()
         return
 
-    if not os.path.isfile(keyword_file) or not os.access(keyword_file, os.R_OK):
-        print(f"File keyword '{keyword_file}' tidak ditemukan atau tidak dapat dibaca.")
-        return
+    print(colorize(f"\n  Memulai scan pada: {website_dir}", Color.CYAN))
 
-    found_any = False
-    results = subprocess.getoutput(f"find {website_dir} -type f")
-    for local_file in results.splitlines():
-        if subprocess.getoutput(f"grep -qFf {keyword_file} {local_file}"):
-            if not found_any:
-                print("Potensi script backdoor ditemukan pada path direktori dibawah:")
-                found_any = True
-            print(f" > {local_file}")
+    anim = LoadingAnimation(f"Scanning /home/{username}")
+    anim.start()
 
-    if not found_any:
-        print("Tidak ditemukan potensi script backdoor yang lainnya saat ini.")
+    returncode, stdout, stderr = run_command([
+        "grep", "-rlF",
+        f"--include=*.php",
+        f"-f", KEYWORD_BACKDOOR,
+        website_dir
+    ], timeout=600)
+
+    anim.stop("Scan selesai")
+    print_separator()
+
+    if returncode == 1 or not stdout:
+        print(colorize("  ✔ Tidak ditemukan potensi script backdoor.", Color.GREEN))
+    elif returncode == 0 and stdout:
+        found_files = stdout.splitlines()
+        print(colorize(f"  ⚠ Ditemukan {len(found_files)} potensi backdoor:\n", Color.RED))
+        for filepath in found_files:
+            print(colorize("  ⚑ ", Color.RED) + filepath)
+        log(f"perform_scan [{username}]: {len(found_files)} backdoor potensial", "warning")
+        for f in found_files:
+            log(f"  BACKDOOR: {f}", "warning")
+
+        save = input(colorize("\n  Simpan hasil ke file? (y/n): ", Color.CYAN)).strip().lower()
+        if save == 'y':
+            report_path = f"/tmp/backdoor_scan_{username}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            try:
+                with open(report_path, 'w') as f:
+                    f.write(f"Backdoor Scan Report\n")
+                    f.write(f"Username : {username}\n")
+                    f.write(f"Waktu    : {datetime.now()}\n")
+                    f.write(f"Ditemukan: {len(found_files)} file\n")
+                    f.write("=" * 50 + "\n")
+                    for fp in found_files:
+                        f.write(fp + "\n")
+                print(colorize(f"  ✔ Laporan disimpan ke: {report_path}", Color.GREEN))
+            except OSError as e:
+                print(colorize(f"  ✗ Gagal menyimpan laporan: {e}", Color.RED))
+    else:
+        print(colorize(f"  ⚠ Error saat scan: {stderr}", Color.YELLOW))
+
     print_footer()
-    input("Tekan Enter untuk kembali ke menu...")
+    press_enter()
 
-# Memperbarui menu utama untuk memasukkan submenu audit judol
-
-def main_menu():
+# ─────────────────────────────────────────────
+# SUBMENU RENDERER
+# ─────────────────────────────────────────────
+def show_submenu(title: str, menu_items: list):
+    """
+    Render submenu generik.
+    menu_items: list of (label, function)
+    """
     while True:
         print_header()
-        print("\033[1;32mPlease choose an option:\033[0m")
-        print("\033[1;33m1) Audit Disk\033[0m")
-        print("\033[1;33m2) Audit Judol\033[0m")
-        print("\033[1;33m3) Mitigasi DDoS\033[0m")
-        print("\033[1;33m4) Mitigasi Backdoor (beta)\033[0m")
-        print("\033[1;33m5) EXIT\033[0m")
+        print(colorize(f"  Opsi: {title}", Color.BOLD))
+        print()
 
-        choice = input("#? ")
-        if choice == '1':
-            show_disk_audit_menu()
-        elif choice == '2':
-            show_judol_audit_menu()
-        elif choice == '3':
-            show_ddos_menu()
-        elif choice == '4':
-            perform_scan()
-        elif choice == '5':
-            print("Exiting.")
-            break
+        for i, (label, _) in enumerate(menu_items, start=1):
+            print(colorize(f"  {i})", Color.YELLOW) + f" {label}")
+
+        back_num = len(menu_items) + 1
+        print(colorize(f"  {back_num})", Color.DIM) + " Kembali ke Menu Utama")
+        print()
+
+        choice = input(colorize("  #? ", Color.CYAN)).strip()
+
+        if choice.isdigit():
+            idx = int(choice)
+            if 1 <= idx <= len(menu_items):
+                menu_items[idx - 1][1]()
+            elif idx == back_num:
+                return
+            else:
+                print(colorize("  ✗ Pilihan tidak valid.", Color.RED))
+                time.sleep(1)
         else:
-            print("Invalid option. Please try again.")
+            print(colorize("  ✗ Masukkan angka.", Color.RED))
+            time.sleep(1)
+
+# ─────────────────────────────────────────────
+# MAIN MENU
+# ─────────────────────────────────────────────
+def show_system_info():
+    """Tampilkan info sistem singkat di main menu."""
+    try:
+        hostname = run_shell("hostname").strip()
+        uptime = run_shell("uptime -p 2>/dev/null || uptime").strip()
+        load = run_shell("cat /proc/loadavg | awk '{print $1,$2,$3}'").strip()
+        disk = run_shell("df -h / | tail -1 | awk '{print $3\"/\"$2\" (\"$5\" used)\"}'").strip()
+
+        print(colorize(f"  Host   : {hostname}", Color.DIM))
+        print(colorize(f"  Uptime : {uptime}", Color.DIM))
+        print(colorize(f"  Load   : {load}", Color.DIM))
+        print(colorize(f"  Disk / : {disk}", Color.DIM))
+        print()
+    except Exception:
+        pass
+
+def main_menu():
+    setup_logging()
+    log(f"Session dimulai - PID {os.getpid()}")
+
+    menu_items = [
+        ("Audit Disk",              show_disk_audit_menu),
+        ("Audit Judol",             show_judol_audit_menu),
+        ("Mitigasi DDoS",           show_ddos_menu),
+        ("Mitigasi Backdoor (beta)", perform_scan),
+    ]
+
+    while True:
+        print_header()
+        show_system_info()
+        print(colorize("  Pilih opsi:", Color.BOLD))
+        print()
+
+        for i, (label, _) in enumerate(menu_items, start=1):
+            print(colorize(f"  {i})", Color.YELLOW) + f" {label}")
+
+        print(colorize(f"  {len(menu_items)+1})", Color.RED) + " EXIT")
+        print()
+
+        choice = input(colorize("  #? ", Color.CYAN)).strip()
+
+        if choice.isdigit():
+            idx = int(choice)
+            if 1 <= idx <= len(menu_items):
+                menu_items[idx - 1][1]()
+            elif idx == len(menu_items) + 1:
+                log("Session berakhir")
+                print(colorize("\n  Sampai jumpa!\n", Color.BOLD_GREEN))
+                sys.exit(0)
+            else:
+                print(colorize("  ✗ Pilihan tidak valid.", Color.RED))
+                time.sleep(1)
+        else:
+            print(colorize("  ✗ Masukkan angka.", Color.RED))
+            time.sleep(1)
 
 if __name__ == "__main__":
-    main_menu() 
+    if sys.version_info < (3, 9):
+        print("ERROR: Python 3.9+ diperlukan.")
+        sys.exit(1)
+    main_menu()
