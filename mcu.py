@@ -2,7 +2,7 @@
 # Monitoring Commandline Utility
 # Original by: Arief (nocturnalismee)
 # Source: https://github.com/nocturnalismee/simple-monitor-utility
-# Version : 2.0.1 (Refactored & Secured)
+# Version : 2.0.2 (Final Optimized)
 
 import os
 import sys
@@ -21,7 +21,7 @@ from typing import Optional
 # ─────────────────────────────────────────────
 # KONFIGURASI
 # ─────────────────────────────────────────────
-VERSION = "2.0.1"
+VERSION = "2.0.2"
 LOG_DIR = "/var/log/monitor-utility"
 LOG_FILE = f"{LOG_DIR}/audit_{datetime.now().strftime('%Y%m%d')}.log"
 KEYWORD_JUDI_URL = "https://raw.githubusercontent.com/nocturnalismee/simple-monitor-utility/main/judaylist.txt"
@@ -78,7 +78,6 @@ def setup_logging():
             ]
         )
     except PermissionError:
-        # Fallback ke /tmp jika tidak punya akses ke /var/log
         fallback_log = f"/tmp/monitor-utility_{datetime.now().strftime('%Y%m%d')}.log"
         logging.basicConfig(
             level=logging.INFO,
@@ -89,7 +88,6 @@ def setup_logging():
 
 def log(message: str, level: str = "info"):
     """Wrapper logging."""
-    # Gunakan .upper() karena level di logging module adalah uppercase (INFO, WARNING, dll)
     log_func = getattr(logging, level.upper(), logging.info)
     log_func(message)
 
@@ -110,7 +108,6 @@ def print_separator(char: str = "─", color: str = Color.DIM):
     print(colorize(char * width, color))
 
 def print_header():
-    # Gunakan subprocess untuk clear screen agar lebih aman daripada os.system
     subprocess.run(['cls' if os.name == 'nt' else 'clear'], check=False)
     print_separator("═", Color.BOLD_GREEN)
     print_centered(f"  Monitoring Commandline Utility  v{VERSION}  ")
@@ -134,89 +131,72 @@ def confirm_action(prompt: str) -> bool:
     return answer == "ya"
 
 # ─────────────────────────────────────────────
-# HELPER: FETCH KEYWORD DARI GITHUB
+# HELPER: FETCH & PREPROCESS KEYWORD
 # ─────────────────────────────────────────────
-def fetch_keyword_file(url: str, cache_name: str) -> Optional[str]: # <--- GANTI str | None jadi Optional[str]
-    """
-    Mengunduh keyword list dari GitHub. 
-    Menggunakan cache di /tmp agar tidak download berulang-ulang.
-    """
+def fetch_keyword_file(url: str, cache_name: str) -> Optional[str]:
+    """Mengunduh keyword list dari GitHub dengan cache 24 jam."""
     cache_path = f"/tmp/{cache_name}"
     
-    # Cek apakah cache ada dan masih valid (kurang dari 24 jam)
     if os.path.exists(cache_path):
         file_age = time.time() - os.path.getmtime(cache_path)
         if file_age < CACHE_TTL:
             return cache_path
             
-    # Jika tidak ada atau kadaluarsa, coba download
     try:
         print(colorize(f"  [*] Mengunduh keyword list dari GitHub...", Color.CYAN))
-        req = urllib.request.Request(
-            url, 
-            headers={'User-Agent': 'Monitor-Utility/2.0 (Linux)'}
-        )
+        req = urllib.request.Request(url, headers={'User-Agent': 'Monitor-Utility/2.0 (Linux)'})
         with urllib.request.urlopen(req, timeout=10) as response:
             with open(cache_path, 'wb') as f:
                 f.write(response.read())
         print(colorize(f"  [+] Keyword list berhasil diunduh.", Color.GREEN))
         return cache_path
         
-    except (urllib.error.URLError, urllib.error.HTTPError, Exception) as e:
+    except Exception as e:
         print(colorize(f"  [-] Gagal mengunduh dari GitHub: {e}", Color.RED))
-        # Fallback: gunakan cache lama jika download gagal (misal server offline)
         if os.path.exists(cache_path):
             print(colorize(f"  [!] Menggunakan cache lama (offline mode).", Color.YELLOW))
             return cache_path
         return None
-import re
 
 def prepare_backdoor_patterns(raw_file: str, fixed_file: str, regex_file: str):
-    """
-    Memisahkan fixed string dan regex dari file mentah GitHub 
-    agar aman digunakan oleh grep tanpa menyebabkan crash.
-    """
+    """Memisahkan fixed string dan regex agar aman untuk grep."""
     fixed_strings = []
     regex_strings = []
     
-    # Pattern untuk mendeteksi Regex (Extended Regular Expression)
-    # Mendeteksi: \d, \s, \w, [a-z], {n,m}, |, ^, $
-    regex_detector = re.compile(r'\\[dswDSW]|\[[^\]]+\]|\{\d+\}|\{\d+,\d*\}|\||\^|\$')
-    
-    # Pengecualian: Hex string seperti \x5f\x43\x4f\x4f\x4b\x49\x45
+    regex_detector = re.compile(r'\\[dswDSWbB]|\[[^\]]+\]|\{\d+\}|\{\d+,\d*\}|\||\^|\$')
     hex_detector = re.compile(r'^(\\x[0-9a-fA-F]{2})+$')
 
     with open(raw_file, 'r', errors='ignore') as f:
         for line in f:
             line = line.strip()
-            # Abaikan baris kosong dan komentar
             if not line or line.startswith('#'):
                 continue
                 
-            # Jika murni hex string, masukkan ke fixed string
             if hex_detector.match(line):
                 fixed_strings.append(line)
                 continue
                 
-            # Jika mengandung kurung siku/kurung biasa yang tidak seimbang, pasti fixed string
-            # Contoh: system($_GET[ -> [ tidak ada ]
             if line.count('[') != line.count(']') or line.count('(') != line.count(')'):
                 fixed_strings.append(line)
                 continue
                 
-            # Jika terdeteksi sebagai regex
             if regex_detector.search(line):
                 regex_strings.append(line)
             else:
                 fixed_strings.append(line)
+
+    # Fallback agar file tidak kosong total (mencegah edge-case pada beberapa versi grep)
+    if not fixed_strings: fixed_strings.append("IMPOSSIBLE_STRING_TO_MATCH_12345")
+    if not regex_strings: regex_strings.append("^IMPOSSIBLE_REGEX_TO_MATCH_12345$")
 
     with open(fixed_file, 'w') as f:
         f.write('\n'.join(fixed_strings))
         
     with open(regex_file, 'w') as f:
         f.write('\n'.join(regex_strings))
+
 # ─────────────────────────────────────────────
-# LOADING ANIMATION (non-blocking via thread)
+# LOADING ANIMATION
 # ─────────────────────────────────────────────
 class LoadingAnimation:
     def __init__(self, message: str = "Memproses"):
@@ -225,7 +205,6 @@ class LoadingAnimation:
         self._thread = threading.Thread(target=self._animate, daemon=True)
 
     def _animate(self):
-        # Menggunakan ASCII spinner agar 100% support di semua terminal Linux/SSH
         frames = ["|", "/", "-", "\\"]
         idx = 0
         while not self._stop_event.is_set():
@@ -243,41 +222,21 @@ class LoadingAnimation:
         print(f"\r  {colorize('[+]', Color.BOLD_GREEN)}  {done_message}          ")
 
 # ─────────────────────────────────────────────
-# HELPER: JALANKAN COMMAND DENGAN AMAN
+# HELPER: COMMAND EXECUTION
 # ─────────────────────────────────────────────
 def run_command(args: list, timeout: int = 300) -> tuple[int, str, str]:
-    """
-    Jalankan command sebagai list (aman dari shell injection).
-    Return: (returncode, stdout, stderr)
-    """
     try:
-        result = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=timeout
-        )
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
         return result.returncode, result.stdout.strip(), result.stderr.strip()
     except subprocess.TimeoutExpired:
         return -1, "", f"Command timeout setelah {timeout} detik"
-    except FileNotFoundError as e:
-        return -1, "", f"Command tidak ditemukan: {e}"
     except Exception as e:
         return -1, "", str(e)
 
 def run_shell(command: str, timeout: int = 300) -> str:
-    """Jalankan shell command dan kembalikan output. Digunakan hanya untuk pipeline kompleks."""
     try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout
-        )
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
         return result.stdout.strip()
-    except subprocess.TimeoutExpired:
-        return "[ERROR] Command timeout"
     except Exception as e:
         return f"[ERROR] {e}"
 
@@ -292,12 +251,10 @@ def find_large_files():
     anim = LoadingAnimation("Mencari file besar")
     anim.start()
     
-    # Menggunakan variabel LARGE_FILE_THRESHOLD
     results = run_shell(
         f"find /home/* -path '/home/*/mail' -prune -o -type f -size {LARGE_FILE_THRESHOLD} -print0 2>/dev/null "
         "| xargs -0 du -sh 2>/dev/null | sort -k1,1hr"
     )
-
     anim.stop("Pencarian selesai")
     print_separator()
 
@@ -326,11 +283,9 @@ def check_email_usage():
 
     anim = LoadingAnimation("Menganalisa direktori mail")
     anim.start()
-
     results = run_shell(
         "find /home/* -maxdepth 1 -type d -name 'mail' -exec du -sb {} + 2>/dev/null | sort -k1,1nr"
     )
-
     anim.stop("Analisa selesai")
     print_separator()
 
@@ -342,21 +297,18 @@ def check_email_usage():
         flagged = 0
         for line in results.splitlines():
             parts = line.split(maxsplit=1)
-            if len(parts) != 2:
-                continue
+            if len(parts) != 2: continue
             bytes_str, directory = parts
             try:
                 total_bytes = int(bytes_str)
                 gb = total_bytes / (1024 ** 3)
                 if total_bytes > EMAIL_THRESHOLD_BYTES:
-                    status = colorize(f"  {gb:<18.2f} {directory}  [!] >10GB", Color.RED)
+                    print(colorize(f"  {gb:<18.2f} {directory}  [!] >10GB", Color.RED))
                     flagged += 1
                     log(f"check_email_usage: {directory} = {gb:.2f}GB [FLAGGED]", "warning")
                 else:
-                    status = colorize(f"  {gb:<18.2f} {directory}", Color.DIM)
-                print(status)
-            except ValueError:
-                continue
+                    print(colorize(f"  {gb:<18.2f} {directory}", Color.DIM))
+            except ValueError: continue
 
         print_separator("-")
         if flagged > 0:
@@ -375,19 +327,12 @@ def find_zero_size_files():
     anim = LoadingAnimation("Mencari file 0 KB")
     anim.start()
 
-    # Menambahkan exclude directories agar tidak nyangkut di file cache/session
     exclude_args = []
     for d in EXCLUDE_DIRS:
         exclude_args.extend(["-path", f"*/{d}", "-prune", "-o"])
 
-    cmd = ["find", "/home"] + exclude_args + [
-        "-type", "f",
-        "-size", "0",
-        "-print"
-    ]
-
+    cmd = ["find", "/home"] + exclude_args + ["-type", "f", "-size", "0", "-print"]
     returncode, stdout, stderr = run_command(cmd, timeout=300)
-
     anim.stop("Pencarian selesai")
     print_separator()
 
@@ -405,31 +350,26 @@ def find_zero_size_files():
         print(colorize(f"  [{i+1:>4}] ", Color.DIM) + filepath)
         if (i + 1) % page_size == 0 and (i + 1) < len(files):
             cont = input(colorize(f"\n  Tampilkan {page_size} file berikutnya? (y/n): ", Color.CYAN))
-            if cont.lower() != 'y':
-                break
+            if cont.lower() != 'y': break
 
     print_separator("-")
     log(f"find_zero_size_files: {len(files)} file ditemukan")
 
     if confirm_action(f"Hapus {len(files)} file ini secara PERMANEN?"):
-        deleted = 0
-        errors = 0
+        deleted, errors = 0, 0
         for filepath in files:
             try:
                 p = Path(filepath)
-                # Double-check: pastikan file ada, bukan symlink, dan ukurannya benar-benar 0
                 if p.exists() and not p.is_symlink() and p.stat().st_size == 0:
                     p.unlink()
                     deleted += 1
                     log(f"Deleted: {filepath}")
             except OSError as e:
                 print(colorize(f"  [-] Gagal hapus {filepath}: {e}", Color.RED))
-                log(f"Failed to delete {filepath}: {e}", "error")
                 errors += 1
 
         print(colorize(f"\n  [+] Berhasil dihapus: {deleted} file", Color.GREEN))
-        if errors:
-            print(colorize(f"  [-] Gagal dihapus: {errors} file", Color.RED))
+        if errors: print(colorize(f"  [-] Gagal dihapus: {errors} file", Color.RED))
     else:
         print(colorize("\n  Penghapusan dibatalkan.", Color.YELLOW))
 
@@ -437,12 +377,11 @@ def find_zero_size_files():
     press_enter()
 
 def show_disk_audit_menu():
-    menu_items = [
+    show_submenu("Audit Disk Usage", [
         ("Audit File Backup/Arsip > 1GB", find_large_files),
         ("Audit Disk Usage Mail",         check_email_usage),
         ("Audit & Delete File 0 KB",      find_zero_size_files),
-    ]
-    show_submenu("Audit Disk Usage", menu_items)
+    ])
 
 # ─────────────────────────────────────────────
 # MENU 2: AUDIT JUDOL
@@ -452,12 +391,9 @@ def find_judi_scripts():
     print(colorize("  [AUDIT] Script Judi / Gambling", Color.BOLD))
     print(colorize(f"  Source: {KEYWORD_JUDI_URL}\n", Color.DIM))
 
-    # Fetch dari GitHub / Cache
     keyword_file = fetch_keyword_file(KEYWORD_JUDI_URL, CACHE_JUDI)
-    
-    # Validasi hasil fetch
     if not keyword_file:
-        print(colorize("  [-] Tidak ada keyword list yang bisa digunakan (Offline & tidak ada cache).", Color.RED))
+        print(colorize("  [-] Tidak ada keyword list yang bisa digunakan.", Color.RED))
         press_enter()
         return
         
@@ -466,13 +402,8 @@ def find_judi_scripts():
         press_enter()
         return
 
-    exclude_dir_args = []
-    for d in EXCLUDE_DIRS:
-        exclude_dir_args += ["--exclude-dir", d]
-
-    exclude_ext_args = []
-    for ext in EXCLUDE_EXTS:
-        exclude_ext_args += ["--exclude", f"*.{ext}"]
+    exclude_dir_args = [arg for d in EXCLUDE_DIRS for arg in ["--exclude-dir", d]]
+    exclude_ext_args = [arg for ext in EXCLUDE_EXTS for arg in ["--exclude", f"*.{ext}"]]
 
     print(colorize("  Included files : index.*", Color.DIM))
     print(colorize(f"  Excluded dirs  : {', '.join(EXCLUDE_DIRS)}", Color.DIM))
@@ -482,15 +413,8 @@ def find_judi_scripts():
     anim = LoadingAnimation("Mencari script judi")
     anim.start()
 
-    # PERBAIKAN: Menggunakan variabel 'keyword_file' (bukan KEYWORD_JUDI)
-    cmd = (
-        ["grep", "-i", "-l", "-r", "-F", "--include=index.*", f"-f{keyword_file}"]
-        + exclude_dir_args
-        + exclude_ext_args
-        + ["/home/"]
-    )
+    cmd = ["grep", "-i", "-l", "-r", "-F", "--include=index.*", f"-f{keyword_file}"] + exclude_dir_args + exclude_ext_args + ["/home/"]
     returncode, stdout, stderr = run_command(cmd, timeout=600)
-
     anim.stop("Pencarian selesai")
     print_separator()
 
@@ -502,17 +426,12 @@ def find_judi_scripts():
         for filepath in found_files:
             print(colorize("  [*] ", Color.RED) + filepath)
         log(f"find_judi_scripts: {len(found_files)} file flagged", "warning")
-        for f in found_files:
-            log(f"  JUDI: {f}", "warning")
 
     print_footer()
     press_enter()
 
 def show_judol_audit_menu():
-    menu_items = [
-        ("Cari Script Judi", find_judi_scripts),
-    ]
-    show_submenu("Audit Judol", menu_items)
+    show_submenu("Audit Judol", [("Cari Script Judi", find_judi_scripts)])
 
 # ─────────────────────────────────────────────
 # MENU 3: MITIGASI DDOS
@@ -521,11 +440,7 @@ def track_ddos_by_ip():
     print_header()
     print(colorize("  [DDoS] Top IP berdasarkan jumlah koneksi", Color.BOLD))
     print_separator()
-
-    results = run_shell(
-        "netstat -ntu 2>/dev/null | awk '{print $5}' | grep -oE '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' "
-        "| sort | uniq -c | sort -rn | head -20"
-    )
+    results = run_shell("netstat -ntu 2>/dev/null | awk '{print $5}' | grep -oE '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' | sort | uniq -c | sort -rn | head -20")
 
     if not results:
         print(colorize("  Tidak ada data koneksi aktif.", Color.YELLOW))
@@ -538,7 +453,6 @@ def track_ddos_by_ip():
                 count, ip = parts
                 color = Color.RED if int(count) > 100 else Color.YELLOW if int(count) > 20 else Color.RESET
                 print(f"  {colorize(count, color):<20} {ip}")
-
     print_footer()
     press_enter()
 
@@ -546,12 +460,7 @@ def check_httpd_connections():
     print_header()
     print(colorize("  [DDoS] Koneksi HTTPD per IP (port 80 ESTABLISHED)", Color.BOLD))
     print_separator()
-
-    results = run_shell(
-        "netstat -anp 2>/dev/null | grep ':80' | grep ESTABLISHED "
-        "| awk '{print $5}' | grep -oE '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' "
-        "| sort | uniq -c | sort -rn | head -20"
-    )
+    results = run_shell("netstat -anp 2>/dev/null | grep ':80' | grep ESTABLISHED | awk '{print $5}' | grep -oE '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' | sort | uniq -c | sort -rn | head -20")
 
     if not results:
         print(colorize("  Tidak ada koneksi ESTABLISHED di port 80.", Color.YELLOW))
@@ -564,7 +473,6 @@ def check_httpd_connections():
                 count, ip = parts
                 color = Color.RED if int(count) > 50 else Color.YELLOW if int(count) > 10 else Color.RESET
                 print(f"  {colorize(count, color):<20} {ip}")
-
     print_footer()
     press_enter()
 
@@ -572,12 +480,7 @@ def check_syn_recv():
     print_header()
     print(colorize("  [DDoS] IP dengan status SYN_RECV (indikasi SYN Flood)", Color.BOLD))
     print_separator()
-
-    results = run_shell(
-        "netstat -n 2>/dev/null | grep 'SYN_RECV' "
-        "| awk '{print $5}' | grep -oE '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' "
-        "| sort | uniq -c | sort -rn | head -20"
-    )
+    results = run_shell("netstat -n 2>/dev/null | grep 'SYN_RECV' | awk '{print $5}' | grep -oE '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+' | sort | uniq -c | sort -rn | head -20")
 
     if not results:
         print(colorize("  [+] Tidak ada koneksi SYN_RECV ditemukan.", Color.GREEN))
@@ -588,20 +491,17 @@ def check_syn_recv():
         for line in results.splitlines():
             parts = line.split()
             if len(parts) == 2:
-                count, ip = parts
-                print(f"  {colorize(count, Color.RED):<20} {ip}")
-        log(f"check_syn_recv: SYN_RECV detected\n{results}", "warning")
-
+                print(f"  {colorize(parts[0], Color.RED):<20} {parts[1]}")
+        log(f"check_syn_recv: SYN_RECV detected", "warning")
     print_footer()
     press_enter()
 
 def show_ddos_menu():
-    menu_items = [
+    show_submenu("Mitigasi DDoS", [
         ("Track DDoS by IP",          track_ddos_by_ip),
         ("Check HTTPD Connections",   check_httpd_connections),
         ("Check SYN_RECV Status",     check_syn_recv),
-    ]
-    show_submenu("Mitigasi DDoS", menu_items)
+    ])
 
 # ─────────────────────────────────────────────
 # MENU 4: MITIGASI BACKDOOR
@@ -611,36 +511,32 @@ def perform_scan():
     print(colorize("  [BACKDOOR] Scanner Script Backdoor", Color.BOLD))
     print(colorize(f"  Source: {KEYWORD_BACKDOOR_URL}\n", Color.DIM))
 
-    # 1. Fetch dari GitHub / Cache
     raw_keyword_file = fetch_keyword_file(KEYWORD_BACKDOOR_URL, CACHE_BACKDOOR)
-
-    if not raw_keyword_file:
-        print(colorize("  [-] Tidak ada keyword list yang bisa digunakan.", Color.RED))
+    if not raw_keyword_file or os.path.getsize(raw_keyword_file) == 0:
+        print(colorize("  [-] Keyword list tidak tersedia atau kosong.", Color.RED))
         press_enter()
         return
 
-    if os.path.getsize(raw_keyword_file) == 0:
-        print(colorize("  [!] File keyword backdoor kosong.", Color.YELLOW))
-        press_enter()
-        return
-
-    # 2. PRE-PROCESSOR: Pisahkan Fixed String dan Regex
     fixed_file = f"{raw_keyword_file}.fixed"
     regex_file = f"{raw_keyword_file}.regex"
     
-    print(colorize("  [*] Menganalisa dan memisahkan pattern backdoor...", Color.CYAN))
-    prepare_backdoor_patterns(raw_keyword_file, fixed_file, regex_file)
-    print(colorize("  [+] Pattern siap digunakan.", Color.GREEN))
+    # OPTIMASI: Cek cache pre-processor
+    needs_processing = (
+        not os.path.exists(fixed_file) or 
+        not os.path.exists(regex_file) or 
+        os.path.getmtime(fixed_file) < os.path.getmtime(raw_keyword_file)
+    )
 
-    # 3. Validasi Username
+    if needs_processing:
+        print(colorize("  [*] Menganalisa dan memisahkan pattern backdoor...", Color.CYAN))
+        prepare_backdoor_patterns(raw_keyword_file, fixed_file, regex_file)
+        print(colorize("  [+] Pattern berhasil dipisah dan disimpan.", Color.GREEN))
+    else:
+        print(colorize("  [+] Menggunakan pattern backdoor dari cache lokal.", Color.GREEN))
+
     username = input(colorize("  Masukkan username cPanel yang ingin di-scan: ", Color.CYAN)).strip()
-    if not username:
-        print(colorize("  [-] Username tidak boleh kosong.", Color.RED))
-        press_enter()
-        return
-
-    if not re.match(r'^[a-zA-Z0-9_\-]{1,32}$', username):
-        print(colorize("  [-] Username tidak valid.", Color.RED))
+    if not username or not re.match(r'^[a-zA-Z0-9_\-]{1,32}$', username):
+        print(colorize("  [-] Username kosong atau tidak valid.", Color.RED))
         press_enter()
         return
 
@@ -651,36 +547,18 @@ def perform_scan():
         return
 
     print(colorize(f"\n  Memulai scan pada: {website_dir}", Color.CYAN))
-
     anim = LoadingAnimation(f"Scanning /home/{username}")
     anim.start()
 
-    # 4. SCAN 1: Fixed Strings (Super Cepat & Aman)
-    rc1, out1, err1 = run_command([
-        "grep", "-r", "-l", "-F",
-        "--include=*.php",
-        "-f", fixed_file,
-        website_dir
-    ], timeout=600)
-    
-    # 5. SCAN 2: Regex (Untuk obfuscation kompleks)
-    rc2, out2, err2 = run_command([
-        "grep", "-r", "-l", "-E",
-        "--include=*.php",
-        "-f", regex_file,
-        website_dir
-    ], timeout=600)
+    # Scan Fixed Strings
+    rc1, out1, _ = run_command(["grep", "-r", "-l", "-F", "--include=*.php", "-f", fixed_file, website_dir], timeout=600)
+    # Scan Regex
+    rc2, out2, _ = run_command(["grep", "-r", "-l", "-E", "--include=*.php", "-f", regex_file, website_dir], timeout=600)
 
     anim.stop("Scan selesai")
     print_separator()
 
-    # 6. Gabungkan Hasil & Hilangkan Duplikat
-    found_files = []
-    if out1: found_files.extend(out1.splitlines())
-    if out2: found_files.extend(out2.splitlines())
-    
-    # Hapus duplikat dan urutkan
-    found_files = sorted(list(set(found_files)))
+    found_files = sorted(list(set((out1.splitlines() if out1 else []) + (out2.splitlines() if out2 else []))))
 
     if not found_files:
         print(colorize("  [+] Tidak ditemukan potensi script backdoor.", Color.GREEN))
@@ -689,40 +567,28 @@ def perform_scan():
         for filepath in found_files:
             print(colorize("  [*] ", Color.RED) + filepath)
         log(f"perform_scan [{username}]: {len(found_files)} backdoor potensial", "warning")
-        for f in found_files:
-            log(f"  BACKDOOR: {f}", "warning")
 
-        save = input(colorize("\n  Simpan hasil ke file? (y/n): ", Color.CYAN)).strip().lower()
-        if save == 'y':
+        if input(colorize("\n  Simpan hasil ke file? (y/n): ", Color.CYAN)).strip().lower() == 'y':
             report_path = f"/tmp/backdoor_scan_{username}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
             try:
                 with open(report_path, 'w') as f:
-                    f.write(f"Backdoor Scan Report\n")
-                    f.write(f"Username : {username}\n")
-                    f.write(f"Waktu    : {datetime.now()}\n")
-                    f.write(f"Ditemukan: {len(found_files)} file\n")
-                    f.write("=" * 50 + "\n")
-                    for fp in found_files:
-                        f.write(fp + "\n")
+                    f.write(f"Backdoor Scan Report\nUsername : {username}\nWaktu    : {datetime.now()}\nDitemukan: {len(found_files)} file\n{'='*50}\n")
+                    f.write('\n'.join(found_files))
                 print(colorize(f"  [+] Laporan disimpan ke: {report_path}", Color.GREEN))
             except OSError as e:
                 print(colorize(f"  [-] Gagal menyimpan laporan: {e}", Color.RED))
 
     print_footer()
     press_enter()
+
 # ─────────────────────────────────────────────
-# SUBMENU RENDERER
+# SUBMENU & MAIN MENU
 # ─────────────────────────────────────────────
 def show_submenu(title: str, menu_items: list):
-    """
-    Render submenu generik.
-    menu_items: list of (label, function)
-    """
     while True:
         print_header()
         print(colorize(f"  Opsi: {title}", Color.BOLD))
         print()
-
         for i, (label, _) in enumerate(menu_items, start=1):
             print(colorize(f"  {i})", Color.YELLOW) + f" {label}")
 
@@ -731,38 +597,23 @@ def show_submenu(title: str, menu_items: list):
         print()
 
         choice = input(colorize("  #? ", Color.CYAN)).strip()
-
         if choice.isdigit():
             idx = int(choice)
             if 1 <= idx <= len(menu_items):
                 menu_items[idx - 1][1]()
             elif idx == back_num:
                 return
-            else:
-                print(colorize("  [-] Pilihan tidak valid.", Color.RED))
-                time.sleep(1)
-        else:
-            print(colorize("  [-] Masukkan angka.", Color.RED))
-            time.sleep(1)
+        print(colorize("  [-] Pilihan tidak valid.", Color.RED))
+        time.sleep(1)
 
-# ─────────────────────────────────────────────
-# MAIN MENU
-# ─────────────────────────────────────────────
 def show_system_info():
-    """Tampilkan info sistem singkat di main menu."""
     try:
-        hostname = run_shell("hostname").strip()
-        uptime = run_shell("uptime -p 2>/dev/null || uptime").strip()
-        load = run_shell("cat /proc/loadavg | awk '{print $1,$2,$3}'").strip()
-        disk = run_shell("df -h / | tail -1 | awk '{print $3\"/\"$2\" (\"$5\" used)\"}'").strip()
-
-        print(colorize(f"  Host   : {hostname}", Color.DIM))
-        print(colorize(f"  Uptime : {uptime}", Color.DIM))
-        print(colorize(f"  Load   : {load}", Color.DIM))
-        print(colorize(f"  Disk / : {disk}", Color.DIM))
+        print(colorize(f"  Host   : {run_shell('hostname').strip()}", Color.DIM))
+        print(colorize(f"  Uptime : {run_shell('uptime -p 2>/dev/null || uptime').strip()}", Color.DIM))
+        print(colorize(f"  Load   : {run_shell('cat /proc/loadavg | awk \'{print $1,$2,$3}\'').strip()}", Color.DIM))
+        print(colorize(f"  Disk / : {run_shell('df -h / | tail -1 | awk \'{print $3\"/\"$2\" (\"$5\" used)\"}\'').strip()}", Color.DIM))
         print()
-    except Exception:
-        pass
+    except Exception: pass
 
 def main_menu():
     setup_logging()
@@ -780,15 +631,12 @@ def main_menu():
         show_system_info()
         print(colorize("  Pilih opsi:", Color.BOLD))
         print()
-
         for i, (label, _) in enumerate(menu_items, start=1):
             print(colorize(f"  {i})", Color.YELLOW) + f" {label}")
-
         print(colorize(f"  {len(menu_items)+1})", Color.RED) + " EXIT")
         print()
 
         choice = input(colorize("  #? ", Color.CYAN)).strip()
-
         if choice.isdigit():
             idx = int(choice)
             if 1 <= idx <= len(menu_items):
@@ -797,12 +645,8 @@ def main_menu():
                 log("Session berakhir")
                 print(colorize("\n  Sampai jumpa!\n", Color.BOLD_GREEN))
                 sys.exit(0)
-            else:
-                print(colorize("  [-] Pilihan tidak valid.", Color.RED))
-                time.sleep(1)
-        else:
-            print(colorize("  [-] Masukkan angka.", Color.RED))
-            time.sleep(1)
+        print(colorize("  [-] Pilihan tidak valid.", Color.RED))
+        time.sleep(1)
 
 if __name__ == "__main__":
     if sys.version_info < (3, 9):
