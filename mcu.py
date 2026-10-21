@@ -169,6 +169,52 @@ def fetch_keyword_file(url: str, cache_name: str) -> Optional[str]: # <--- GANTI
             print(colorize(f"  [!] Menggunakan cache lama (offline mode).", Color.YELLOW))
             return cache_path
         return None
+import re
+
+def prepare_backdoor_patterns(raw_file: str, fixed_file: str, regex_file: str):
+    """
+    Memisahkan fixed string dan regex dari file mentah GitHub 
+    agar aman digunakan oleh grep tanpa menyebabkan crash.
+    """
+    fixed_strings = []
+    regex_strings = []
+    
+    # Pattern untuk mendeteksi Regex (Extended Regular Expression)
+    # Mendeteksi: \d, \s, \w, [a-z], {n,m}, |, ^, $
+    regex_detector = re.compile(r'\\[dswDSW]|\[[^\]]+\]|\{\d+\}|\{\d+,\d*\}|\||\^|\$')
+    
+    # Pengecualian: Hex string seperti \x5f\x43\x4f\x4f\x4b\x49\x45
+    hex_detector = re.compile(r'^(\\x[0-9a-fA-F]{2})+$')
+
+    with open(raw_file, 'r', errors='ignore') as f:
+        for line in f:
+            line = line.strip()
+            # Abaikan baris kosong dan komentar
+            if not line or line.startswith('#'):
+                continue
+                
+            # Jika murni hex string, masukkan ke fixed string
+            if hex_detector.match(line):
+                fixed_strings.append(line)
+                continue
+                
+            # Jika mengandung kurung siku/kurung biasa yang tidak seimbang, pasti fixed string
+            # Contoh: system($_GET[ -> [ tidak ada ]
+            if line.count('[') != line.count(']') or line.count('(') != line.count(')'):
+                fixed_strings.append(line)
+                continue
+                
+            # Jika terdeteksi sebagai regex
+            if regex_detector.search(line):
+                regex_strings.append(line)
+            else:
+                fixed_strings.append(line)
+
+    with open(fixed_file, 'w') as f:
+        f.write('\n'.join(fixed_strings))
+        
+    with open(regex_file, 'w') as f:
+        f.write('\n'.join(regex_strings))
 # ─────────────────────────────────────────────
 # LOADING ANIMATION (non-blocking via thread)
 # ─────────────────────────────────────────────
@@ -565,20 +611,28 @@ def perform_scan():
     print(colorize("  [BACKDOOR] Scanner Script Backdoor", Color.BOLD))
     print(colorize(f"  Source: {KEYWORD_BACKDOOR_URL}\n", Color.DIM))
 
-    # Fetch dari GitHub / Cache
-    keyword_file = fetch_keyword_file(KEYWORD_BACKDOOR_URL, CACHE_BACKDOOR)
+    # 1. Fetch dari GitHub / Cache
+    raw_keyword_file = fetch_keyword_file(KEYWORD_BACKDOOR_URL, CACHE_BACKDOOR)
 
-    # PERBAIKAN: Validasi hasil fetch (Pengganti os.path.isfile yang lama)
-    if not keyword_file:
-        print(colorize("  [-] Tidak ada keyword list yang bisa digunakan (Offline & tidak ada cache).", Color.RED))
+    if not raw_keyword_file:
+        print(colorize("  [-] Tidak ada keyword list yang bisa digunakan.", Color.RED))
         press_enter()
         return
 
-    if os.path.getsize(keyword_file) == 0:
+    if os.path.getsize(raw_keyword_file) == 0:
         print(colorize("  [!] File keyword backdoor kosong.", Color.YELLOW))
         press_enter()
         return
 
+    # 2. PRE-PROCESSOR: Pisahkan Fixed String dan Regex
+    fixed_file = f"{raw_keyword_file}.fixed"
+    regex_file = f"{raw_keyword_file}.regex"
+    
+    print(colorize("  [*] Menganalisa dan memisahkan pattern backdoor...", Color.CYAN))
+    prepare_backdoor_patterns(raw_keyword_file, fixed_file, regex_file)
+    print(colorize("  [+] Pattern siap digunakan.", Color.GREEN))
+
+    # 3. Validasi Username
     username = input(colorize("  Masukkan username cPanel yang ingin di-scan: ", Color.CYAN)).strip()
     if not username:
         print(colorize("  [-] Username tidak boleh kosong.", Color.RED))
@@ -601,21 +655,36 @@ def perform_scan():
     anim = LoadingAnimation(f"Scanning /home/{username}")
     anim.start()
 
-    # PERBAIKAN: Menggunakan variabel 'keyword_file' (bukan KEYWORD_BACKDOOR)
-    returncode, stdout, stderr = run_command([
+    # 4. SCAN 1: Fixed Strings (Super Cepat & Aman)
+    rc1, out1, err1 = run_command([
         "grep", "-r", "-l", "-F",
         "--include=*.php",
-        "-f", keyword_file,
+        "-f", fixed_file,
+        website_dir
+    ], timeout=600)
+    
+    # 5. SCAN 2: Regex (Untuk obfuscation kompleks)
+    rc2, out2, err2 = run_command([
+        "grep", "-r", "-l", "-E",
+        "--include=*.php",
+        "-f", regex_file,
         website_dir
     ], timeout=600)
 
     anim.stop("Scan selesai")
     print_separator()
 
-    if returncode == 1 or not stdout:
+    # 6. Gabungkan Hasil & Hilangkan Duplikat
+    found_files = []
+    if out1: found_files.extend(out1.splitlines())
+    if out2: found_files.extend(out2.splitlines())
+    
+    # Hapus duplikat dan urutkan
+    found_files = sorted(list(set(found_files)))
+
+    if not found_files:
         print(colorize("  [+] Tidak ditemukan potensi script backdoor.", Color.GREEN))
-    elif returncode == 0 and stdout:
-        found_files = stdout.splitlines()
+    else:
         print(colorize(f"  [!] Ditemukan {len(found_files)} potensi backdoor:\n", Color.RED))
         for filepath in found_files:
             print(colorize("  [*] ", Color.RED) + filepath)
@@ -638,12 +707,9 @@ def perform_scan():
                 print(colorize(f"  [+] Laporan disimpan ke: {report_path}", Color.GREEN))
             except OSError as e:
                 print(colorize(f"  [-] Gagal menyimpan laporan: {e}", Color.RED))
-    else:
-        print(colorize(f"  [!] Error saat scan: {stderr}", Color.YELLOW))
 
     print_footer()
     press_enter()
-
 # ─────────────────────────────────────────────
 # SUBMENU RENDERER
 # ─────────────────────────────────────────────
