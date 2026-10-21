@@ -16,6 +16,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 # ─────────────────────────────────────────────
 # KONFIGURASI
@@ -135,7 +136,7 @@ def confirm_action(prompt: str) -> bool:
 # ─────────────────────────────────────────────
 # HELPER: FETCH KEYWORD DARI GITHUB
 # ─────────────────────────────────────────────
-def fetch_keyword_file(url: str, cache_name: str) -> str | None:
+def fetch_keyword_file(url: str, cache_name: str) -> Optional[str]: # <--- GANTI str | None jadi Optional[str]
     """
     Mengunduh keyword list dari GitHub. 
     Menggunakan cache di /tmp agar tidak download berulang-ulang.
@@ -168,7 +169,6 @@ def fetch_keyword_file(url: str, cache_name: str) -> str | None:
             print(colorize(f"  [!] Menggunakan cache lama (offline mode).", Color.YELLOW))
             return cache_path
         return None
-
 # ─────────────────────────────────────────────
 # LOADING ANIMATION (non-blocking via thread)
 # ─────────────────────────────────────────────
@@ -409,6 +409,7 @@ def find_judi_scripts():
     # Fetch dari GitHub / Cache
     keyword_file = fetch_keyword_file(KEYWORD_JUDI_URL, CACHE_JUDI)
     
+    # Validasi hasil fetch
     if not keyword_file:
         print(colorize("  [-] Tidak ada keyword list yang bisa digunakan (Offline & tidak ada cache).", Color.RED))
         press_enter()
@@ -435,9 +436,9 @@ def find_judi_scripts():
     anim = LoadingAnimation("Mencari script judi")
     anim.start()
 
-    # PENAMBAHAN FLAG -F (Fixed Strings) untuk mencegah ReDoS dan error regex
+    # PERBAIKAN: Menggunakan variabel 'keyword_file' (bukan KEYWORD_JUDI)
     cmd = (
-        ["grep", "-i", "-l", "-r", "-F", "--include=index.*", f"-f{KEYWORD_JUDI}"]
+        ["grep", "-i", "-l", "-r", "-F", "--include=index.*", f"-f{keyword_file}"]
         + exclude_dir_args
         + exclude_ext_args
         + ["/home/"]
@@ -567,14 +568,14 @@ def perform_scan():
     # Fetch dari GitHub / Cache
     keyword_file = fetch_keyword_file(KEYWORD_BACKDOOR_URL, CACHE_BACKDOOR)
 
-    # Validasi keyword file
-    if not os.path.isfile(KEYWORD_BACKDOOR):
-        print(colorize(f"  [-] Keyword file tidak ditemukan: {KEYWORD_BACKDOOR}", Color.RED))
+    # PERBAIKAN: Validasi hasil fetch (Pengganti os.path.isfile yang lama)
+    if not keyword_file:
+        print(colorize("  [-] Tidak ada keyword list yang bisa digunakan (Offline & tidak ada cache).", Color.RED))
         press_enter()
         return
 
-    if not os.access(KEYWORD_BACKDOOR, os.R_OK):
-        print(colorize(f"  [-] File tidak dapat dibaca: {KEYWORD_BACKDOOR}", Color.RED))
+    if os.path.getsize(keyword_file) == 0:
+        print(colorize("  [!] File keyword backdoor kosong.", Color.YELLOW))
         press_enter()
         return
 
@@ -600,10 +601,11 @@ def perform_scan():
     anim = LoadingAnimation(f"Scanning /home/{username}")
     anim.start()
 
+    # PERBAIKAN: Menggunakan variabel 'keyword_file' (bukan KEYWORD_BACKDOOR)
     returncode, stdout, stderr = run_command([
         "grep", "-r", "-l", "-F",
         "--include=*.php",
-        "-f", KEYWORD_BACKDOOR,
+        "-f", keyword_file,
         website_dir
     ], timeout=600)
 
