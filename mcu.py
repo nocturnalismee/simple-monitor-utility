@@ -387,12 +387,18 @@ def show_disk_audit_menu():
 # ─────────────────────────────────────────────
 # MENU 2: AUDIT JUDOL
 # ─────────────────────────────────────────────
-def find_judi_scripts():
+def execute_judi_scan(target_dir: str, scan_title: str):
+    """
+    Fungsi inti untuk menjalankan scan judi pada direktori target.
+    """
     print_header()
-    print(colorize("  [AUDIT] Script Judi / Gambling", Color.BOLD))
+    print(colorize(f"  [AUDIT] Script Judi - {scan_title}", Color.BOLD))
+    print(colorize(f"  Target: {target_dir}", Color.DIM))
     print(colorize(f"  Source: {KEYWORD_JUDI_URL}\n", Color.DIM))
 
+    # Fetch dari GitHub / Cache
     keyword_file = fetch_keyword_file(KEYWORD_JUDI_URL, CACHE_JUDI)
+    
     if not keyword_file:
         print(colorize("  [-] Tidak ada keyword list yang bisa digunakan.", Color.RED))
         press_enter()
@@ -411,10 +417,16 @@ def find_judi_scripts():
     print(colorize(f"  Excluded exts  : {', '.join(EXCLUDE_EXTS)}", Color.DIM))
     print()
 
-    anim = LoadingAnimation("Mencari script judi")
+    anim = LoadingAnimation(f"Scanning {target_dir}")
     anim.start()
 
-    cmd = ["grep", "-i", "-l", "-r", "-F", "--include=index.*", f"-f{keyword_file}"] + exclude_dir_args + exclude_ext_args + ["/home/"]
+    # Command grep dengan target direktori dinamis
+    cmd = [
+        "grep", "-i", "-l", "-r", "-F", 
+        "--include=index.*", 
+        f"-f{keyword_file}"
+    ] + exclude_dir_args + exclude_ext_args + [target_dir]
+
     returncode, stdout, stderr = run_command(cmd, timeout=600)
     anim.stop("Pencarian selesai")
     print_separator()
@@ -426,13 +438,67 @@ def find_judi_scripts():
         print(colorize(f"  [!] Ditemukan {len(found_files)} file potensial:\n", Color.RED))
         for filepath in found_files:
             print(colorize("  [*] ", Color.RED) + filepath)
-        log(f"find_judi_scripts: {len(found_files)} file flagged", "warning")
+        log(f"find_judi_scripts [{scan_title}]: {len(found_files)} file flagged", "warning")
 
     print_footer()
     press_enter()
 
+def scan_judi_all():
+    """Opsi 1: Scan seluruh /home"""
+    execute_judi_scan("/home/", "Semua Direktori /home")
+
+def scan_judi_by_username():
+    """Opsi 2: Scan berdasarkan username cPanel"""
+    print_header()
+    print(colorize("  [AUDIT] Script Judi by Username", Color.BOLD))
+    username = input(colorize("  Masukkan username cPanel: ", Color.CYAN)).strip()
+    
+    if not username:
+        print(colorize("  [-] Username tidak boleh kosong.", Color.RED))
+        press_enter()
+        return
+        
+    if not re.match(r'^[a-zA-Z0-9_\-]{1,32}$', username):
+        print(colorize("  [-] Username tidak valid.", Color.RED))
+        press_enter()
+        return
+
+    target_dir = f"/home/{username}/"
+    if not os.path.isdir(target_dir):
+        print(colorize(f"  [-] Direktori tidak ditemukan: {target_dir}", Color.RED))
+        press_enter()
+        return
+
+    execute_judi_scan(target_dir, f"User: {username}")
+
+def scan_judi_custom_dir():
+    """Opsi 3: Scan direktori custom"""
+    print_header()
+    print(colorize("  [AUDIT] Script Judi Custom Direktori", Color.BOLD))
+    target_dir = input(colorize("  Masukkan path direktori (contoh: /home/user/public_html): ", Color.CYAN)).strip()
+    
+    if not target_dir:
+        print(colorize("  [-] Path tidak boleh kosong.", Color.RED))
+        press_enter()
+        return
+    
+    # Normalisasi path agar diakhiri slash untuk grep
+    if not target_dir.endswith('/'):
+        target_dir += '/'
+        
+    if not os.path.isdir(target_dir):
+        print(colorize(f"  [-] Direktori tidak ditemukan atau bukan folder: {target_dir}", Color.RED))
+        press_enter()
+        return
+
+    execute_judi_scan(target_dir, "Custom Direktori")
+
 def show_judol_audit_menu():
-    show_submenu("Audit Judol", [("Cari Script Judi", find_judi_scripts)])
+    show_submenu("Audit Judol", [
+        ("Cari Konten Judi ( Opsi All Direktori /home)", scan_judi_all),
+        ("Cari Konten Judi by Username cPanel", scan_judi_by_username),
+        ("Cari Konten Judi by custom Direktory", scan_judi_custom_dir),
+    ])
 
 # ─────────────────────────────────────────────
 # MENU 3: MITIGASI DDOS
