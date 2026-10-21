@@ -88,7 +88,8 @@ def setup_logging():
 
 def log(message: str, level: str = "info"):
     """Wrapper logging."""
-    log_func = getattr(logging, level.upper(), logging.info)
+    # Gunakan .lower() karena fungsi di logging module adalah lowercase (info, warning, error)
+    log_func = getattr(logging, level.lower(), logging.info)
     log_func(message)
 
 # ─────────────────────────────────────────────
@@ -585,10 +586,15 @@ def perform_scan():
 # SUBMENU & MAIN MENU
 # ─────────────────────────────────────────────
 def show_submenu(title: str, menu_items: list):
+    """
+    Render submenu generik.
+    menu_items: list of (label, function)
+    """
     while True:
         print_header()
         print(colorize(f"  Opsi: {title}", Color.BOLD))
         print()
+
         for i, (label, _) in enumerate(menu_items, start=1):
             print(colorize(f"  {i})", Color.YELLOW) + f" {label}")
 
@@ -597,14 +603,20 @@ def show_submenu(title: str, menu_items: list):
         print()
 
         choice = input(colorize("  #? ", Color.CYAN)).strip()
+
         if choice.isdigit():
             idx = int(choice)
             if 1 <= idx <= len(menu_items):
                 menu_items[idx - 1][1]()
+                continue  # <--- PERBAIKAN: Lanjut ke loop berikutnya, skip pesan error
             elif idx == back_num:
                 return
-        print(colorize("  [-] Pilihan tidak valid.", Color.RED))
-        time.sleep(1)
+            else:
+                print(colorize("  [-] Pilihan tidak valid.", Color.RED))
+                time.sleep(1)
+        else:
+            print(colorize("  [-] Masukkan angka.", Color.RED))
+            time.sleep(1)
 
 def show_system_info():
     try:
@@ -631,22 +643,30 @@ def main_menu():
         show_system_info()
         print(colorize("  Pilih opsi:", Color.BOLD))
         print()
+
         for i, (label, _) in enumerate(menu_items, start=1):
             print(colorize(f"  {i})", Color.YELLOW) + f" {label}")
+
         print(colorize(f"  {len(menu_items)+1})", Color.RED) + " EXIT")
         print()
 
         choice = input(colorize("  #? ", Color.CYAN)).strip()
+
         if choice.isdigit():
             idx = int(choice)
             if 1 <= idx <= len(menu_items):
                 menu_items[idx - 1][1]()
+                continue  # <--- PERBAIKAN: Lanjut ke loop berikutnya, skip pesan error
             elif idx == len(menu_items) + 1:
                 log("Session berakhir")
                 print(colorize("\n  Sampai jumpa!\n", Color.BOLD_GREEN))
                 sys.exit(0)
-        print(colorize("  [-] Pilihan tidak valid.", Color.RED))
-        time.sleep(1)
+            else:
+                print(colorize("  [-] Pilihan tidak valid.", Color.RED))
+                time.sleep(1)
+        else:
+            print(colorize("  [-] Masukkan angka.", Color.RED))
+            time.sleep(1)
 
 if __name__ == "__main__":
     if sys.version_info < (3, 9):
