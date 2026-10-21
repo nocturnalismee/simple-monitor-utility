@@ -12,6 +12,8 @@ import time
 import logging
 import shutil
 import re
+import urllib.request
+import urllib.error
 from datetime import datetime
 from pathlib import Path
 
@@ -21,8 +23,13 @@ from pathlib import Path
 VERSION = "2.0.1"
 LOG_DIR = "/var/log/monitor-utility"
 LOG_FILE = f"{LOG_DIR}/audit_{datetime.now().strftime('%Y%m%d')}.log"
-KEYWORD_JUDI = "/etc/judaylist.txt"
-KEYWORD_BACKDOOR = "/etc/bakdor-key.txt"
+KEYWORD_JUDI_URL = "https://raw.githubusercontent.com/nocturnalismee/simple-monitor-utility/main/judaylist.txt"
+KEYWORD_BACKDOOR_URL = "https://raw.githubusercontent.com/nocturnalismee/simple-monitor-utility/main/bakdor-key.txt"
+
+# Nama cache lokal di /tmp
+CACHE_JUDI = "keywordjudi.txt"
+CACHE_BACKDOOR = "patternbackdoor.txt"
+CACHE_TTL = 86400 # 24 Jam dalam detik
 
 LARGE_FILE_THRESHOLD = "+1G"
 EMAIL_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024  # 10 GiB
@@ -124,6 +131,43 @@ def confirm_action(prompt: str) -> bool:
     print(colorize(f"\n[!] {prompt}", Color.YELLOW))
     answer = input(colorize("   Ketik 'ya' untuk konfirmasi: ", Color.RED)).strip().lower()
     return answer == "ya"
+
+# ─────────────────────────────────────────────
+# HELPER: FETCH KEYWORD DARI GITHUB
+# ─────────────────────────────────────────────
+def fetch_keyword_file(url: str, cache_name: str) -> str | None:
+    """
+    Mengunduh keyword list dari GitHub. 
+    Menggunakan cache di /tmp agar tidak download berulang-ulang.
+    """
+    cache_path = f"/tmp/{cache_name}"
+    
+    # Cek apakah cache ada dan masih valid (kurang dari 24 jam)
+    if os.path.exists(cache_path):
+        file_age = time.time() - os.path.getmtime(cache_path)
+        if file_age < CACHE_TTL:
+            return cache_path
+            
+    # Jika tidak ada atau kadaluarsa, coba download
+    try:
+        print(colorize(f"  [*] Mengunduh keyword list dari GitHub...", Color.CYAN))
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Monitor-Utility/2.0 (Linux)'}
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            with open(cache_path, 'wb') as f:
+                f.write(response.read())
+        print(colorize(f"  [+] Keyword list berhasil diunduh.", Color.GREEN))
+        return cache_path
+        
+    except (urllib.error.URLError, urllib.error.HTTPError, Exception) as e:
+        print(colorize(f"  [-] Gagal mengunduh dari GitHub: {e}", Color.RED))
+        # Fallback: gunakan cache lama jika download gagal (misal server offline)
+        if os.path.exists(cache_path):
+            print(colorize(f"  [!] Menggunakan cache lama (offline mode).", Color.YELLOW))
+            return cache_path
+        return None
 
 # ─────────────────────────────────────────────
 # LOADING ANIMATION (non-blocking via thread)
@@ -360,22 +404,18 @@ def show_disk_audit_menu():
 def find_judi_scripts():
     print_header()
     print(colorize("  [AUDIT] Script Judi / Gambling", Color.BOLD))
-    print(colorize(f"  Keyword file: {KEYWORD_JUDI}\n", Color.DIM))
+    print(colorize(f"  Source: {KEYWORD_JUDI_URL}\n", Color.DIM))
 
-    # Validasi keyword file
-    if not os.path.isfile(KEYWORD_JUDI):
-        print(colorize(f"  [-] Keyword file tidak ditemukan: {KEYWORD_JUDI}", Color.RED))
-        print(colorize("  Buat file tersebut dan isi dengan keyword (satu per baris).", Color.YELLOW))
+    # Fetch dari GitHub / Cache
+    keyword_file = fetch_keyword_file(KEYWORD_JUDI_URL, CACHE_JUDI)
+    
+    if not keyword_file:
+        print(colorize("  [-] Tidak ada keyword list yang bisa digunakan (Offline & tidak ada cache).", Color.RED))
         press_enter()
         return
-
-    if not os.access(KEYWORD_JUDI, os.R_OK):
-        print(colorize(f"  [-] File tidak dapat dibaca: {KEYWORD_JUDI}", Color.RED))
-        press_enter()
-        return
-
-    if os.path.getsize(KEYWORD_JUDI) == 0:
-        print(colorize(f"  [!] Keyword file kosong: {KEYWORD_JUDI}", Color.YELLOW))
+        
+    if os.path.getsize(keyword_file) == 0:
+        print(colorize(f"  [!] File keyword kosong.", Color.YELLOW))
         press_enter()
         return
 
@@ -522,7 +562,10 @@ def show_ddos_menu():
 def perform_scan():
     print_header()
     print(colorize("  [BACKDOOR] Scanner Script Backdoor", Color.BOLD))
-    print(colorize(f"  Keyword file: {KEYWORD_BACKDOOR}\n", Color.DIM))
+    print(colorize(f"  Source: {KEYWORD_BACKDOOR_URL}\n", Color.DIM))
+
+    # Fetch dari GitHub / Cache
+    keyword_file = fetch_keyword_file(KEYWORD_BACKDOOR_URL, CACHE_BACKDOOR)
 
     # Validasi keyword file
     if not os.path.isfile(KEYWORD_BACKDOOR):
